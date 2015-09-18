@@ -296,20 +296,38 @@ sub render_struct_field_refs {
 sub render_field_reftarget {
     my ($parent, $field, $name, $reftg) = @_;
 
-    my $aux = $field->getAttribute('aux-value');
-    return if ($aux); # TODO
-
     my $tg = $global_types{$reftg};
     return if (!$tg);
+
+    my $tgname = "${name}_tg";
+    $tgname =~ s/_id(.?.?)_tg/_tg$1/;
+
+    my $aux = $field->getAttribute('aux-value');
+    if ($aux) {
+        # minimal support (aims is unit.caste_tg)
+        return if $aux !~ /^\$\$\.[^_][\w\.]+$/;
+        $aux =~ s/\$\$\.//;
+
+        for my $codehelper ($tg->findnodes('child::code-helper')) {
+            if ($codehelper->getAttribute('name') eq 'find-instance') {
+                my $helper = $codehelper->textContent;
+                $helper =~ s/\$global/df/;
+                $helper =~ s/\$\$/$aux/;
+                $helper =~ s/\$/$name/;
+                if ($helper =~ /^[\w\.\[\]]+$/) {
+                    push @lines_rb, "def $tgname ; $helper ; end";
+                }
+            }
+        }
+        return;
+    }
+
     my $tgvec = $tg->getAttribute('instance-vector');
     return if (!$tgvec);
     my $idx = $tg->getAttribute('key-field');
 
     $tgvec =~ s/^\$global/df/;
     return if $tgvec !~ /^[\w\.]+$/;
-
-    my $tgname = "${name}_tg";
-    $tgname =~ s/_id(.?.?)_tg/_tg$1/;
 
     for my $othername (map { $_->getAttribute('name') } $parent->findnodes('child::ld:field')) {
         $tgname .= '_' if ($othername and $tgname eq $othername);
@@ -577,6 +595,9 @@ sub get_field_align {
         $al = get_field_align($tg);
     } elsif ($meta eq 'bytes') {
         $al = $field->getAttribute('alignment') || 1;
+    } elsif ($meta eq 'primitive') {
+        my $subtype = $field->getAttribute('ld:subtype');
+        if ($subtype eq 'stl-fstream' and $os eq 'windows') { $al = 8; }
     }
 
     return $al;
@@ -717,6 +738,14 @@ sub sizeof {
                 print "sizeof stl-string on $os\n";
             }
             print "sizeof stl-string\n";
+        } elsif ($subtype eq 'stl-fstream') { if ($os eq 'linux') {
+                return 284;
+            } elsif ($os eq 'windows') {
+                return 184;
+            } else {
+                print "sizeof stl-fstream on $os\n";
+            }
+            print "sizeof stl-fstream\n";
         } else {
             print "sizeof primitive $subtype\n";
         }
@@ -993,6 +1022,7 @@ sub render_item_primitive {
     my $subtype = $item->getAttribute('ld:subtype');
     if ($subtype eq 'stl-string') {
         push @lines_rb, "stl_string";
+    } elsif ($subtype eq 'stl-fstream') {
     } else {
         print "no render primitive $subtype\n";
     }

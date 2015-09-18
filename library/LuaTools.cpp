@@ -47,6 +47,7 @@ distribution.
 #include "LuaTools.h"
 
 #include "MiscUtils.h"
+#include "DFHackVersion.h"
 
 #include "df/job.h"
 #include "df/job_item.h"
@@ -225,7 +226,7 @@ static int lua_dfhack_print(lua_State *S)
 {
     std::string str = lua_print_fmt(S);
     if (color_ostream *out = Lua::GetOutput(S))
-        *out << str;
+        out->print("%s", str.c_str());//*out << str;
     else
         Core::print("%s", str.c_str());
     return 0;
@@ -1587,7 +1588,7 @@ lua_State *DFHack::Lua::Open(color_ostream &out, lua_State *state)
     lua_rawsetp(state, LUA_REGISTRYINDEX, &DFHACK_BASE_G_TOKEN);
     lua_setfield(state, -2, "BASE_G");
 
-    lua_pushstring(state, DFHACK_VERSION);
+    lua_pushstring(state, get_dfhack_version());
     lua_setfield(state, -2, "VERSION");
 
     lua_pushboolean(state, IsCoreContext(state));

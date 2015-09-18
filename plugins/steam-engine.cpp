@@ -117,12 +117,13 @@ using std::set;
 using namespace DFHack;
 using namespace df::enums;
 
-using df::global::gps;
-using df::global::world;
-using df::global::ui;
-using df::global::ui_build_selector;
-
 DFHACK_PLUGIN("steam-engine");
+
+REQUIRE_GLOBAL(gps);
+REQUIRE_GLOBAL(world);
+REQUIRE_GLOBAL(ui);
+REQUIRE_GLOBAL(ui_build_selector);
+REQUIRE_GLOBAL(cursor);
 
 /*
  * List of known steam engine workshop raws.
@@ -833,8 +834,6 @@ struct dwarfmode_hook : df::viewscreen_dwarfmodest
 
     void check_hanging_tiles(steam_engine_workshop *engine)
     {
-        using df::global::cursor;
-
         if (!engine) return;
 
         bool error = false;

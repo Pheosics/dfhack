@@ -16,15 +16,15 @@
 using namespace DFHack;
 using namespace df::enums;
 
+DFHACK_PLUGIN("follow");
+DFHACK_PLUGIN_IS_ENABLED(is_enabled);
+REQUIRE_GLOBAL(world);
 
 command_result follow (color_ostream &out, std::vector <std::string> & parameters);
 
 df::unit *followedUnit;
 int32_t prevX, prevY, prevZ;
 uint8_t prevMenuWidth;
-
-DFHACK_PLUGIN("follow");
-DFHACK_PLUGIN_IS_ENABLED(is_enabled);
 
 DFhackCExport command_result plugin_init ( color_ostream &out, std::vector <PluginCommand> &commands)
 {
@@ -126,7 +126,7 @@ DFhackCExport command_result plugin_onupdate ( color_ostream &out )
         Gui::setCursorCoords(c_x - (prevX-x), c_y - (prevY-y), z);
 
     //Save this round's stuff for next time so we can monitor for changes made by the user
-    prevX = x; 
+    prevX = x;
     prevY = y;
     prevZ = z;
     prevMenuWidth = menu_width;
@@ -151,7 +151,7 @@ command_result follow (color_ostream &out, std::vector <std::string> & parameter
     {
         is_enabled = true;
         std::ostringstream ss;
-        ss << "Unpause to begin following " << df::global::world->raws.creatures.all[followedUnit->race]->name[0];
+        ss << "Unpause to begin following " << world->raws.creatures.all[followedUnit->race]->name[0];
         if (followedUnit->name.has_name) ss << " " << followedUnit->name.first_name;
         ss << ". Simply manually move the view to break the following.\n";
         out.print(ss.str().c_str());

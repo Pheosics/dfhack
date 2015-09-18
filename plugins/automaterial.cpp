@@ -43,11 +43,11 @@ using std::vector;
 
 using namespace DFHack;
 using namespace df::enums;
-using df::global::gps;
-using df::global::ui;
-using df::global::ui_build_selector;
 
 DFHACK_PLUGIN("automaterial");
+REQUIRE_GLOBAL(gps);
+REQUIRE_GLOBAL(ui);
+REQUIRE_GLOBAL(ui_build_selector);
 
 struct MaterialDescriptor
 {
@@ -59,8 +59,8 @@ struct MaterialDescriptor
 
     bool matches(const MaterialDescriptor &a) const
     {
-        return a.valid && valid && 
-            a.type == type && 
+        return a.valid && valid &&
+            a.type == type &&
             a.index == index &&
             a.item_type == item_type &&
             a.item_subtype == item_subtype;
@@ -141,15 +141,15 @@ static bool allow_future_placement = false;
 
 static inline bool in_material_choice_stage()
 {
-    return Gui::build_selector_hotkey(Core::getTopViewscreen()) && 
+    return Gui::build_selector_hotkey(Core::getTopViewscreen()) &&
         ui_build_selector->building_type == df::building_type::Construction &&
-        ui->main.mode == ui_sidebar_mode::Build && 
+        ui->main.mode == ui_sidebar_mode::Build &&
         ui_build_selector->stage == 2;
 }
 
 static inline bool in_placement_stage()
 {
-    return Gui::dwarfmode_hotkey(Core::getTopViewscreen()) && 
+    return Gui::dwarfmode_hotkey(Core::getTopViewscreen()) &&
         ui->main.mode == ui_sidebar_mode::Build &&
         ui_build_selector &&
         ui_build_selector->building_type == df::building_type::Construction &&
@@ -158,7 +158,7 @@ static inline bool in_placement_stage()
 
 static inline bool in_type_choice_stage()
 {
-    return Gui::dwarfmode_hotkey(Core::getTopViewscreen()) && 
+    return Gui::dwarfmode_hotkey(Core::getTopViewscreen()) &&
         ui->main.mode == ui_sidebar_mode::Build &&
         ui_build_selector &&
         ui_build_selector->building_type < 0;
@@ -269,7 +269,7 @@ static bool check_autoselect(MaterialDescriptor &material, bool toggle)
     size_t idx;
     if (is_material_in_autoselect(idx, material))
     {
-        if (toggle) 
+        if (toggle)
             vector_erase_at(get_curr_constr_prefs(), idx);
 
         return true;
@@ -440,7 +440,7 @@ static bool is_valid_building_site(building_site &site, bool orthogonal_check, b
     }
     else if (orthogonal_check)
     {
-        if (shape != tiletype_shape::RAMP && 
+        if (shape != tiletype_shape::RAMP &&
             shape_basic != tiletype_shape_basic::Floor &&
             shape_basic != tiletype_shape_basic::Stair)
             return false;
@@ -475,9 +475,6 @@ static bool is_valid_building_site(building_site &site, bool orthogonal_check, b
                 if (tileShapeBasic(shape) != tiletype_shape_basic::Wall)
                     return false;
             }
-
-            if (shape == tiletype_shape::TREE)
-                return false;
 
             if (material == tiletype_material::FIRE ||
                 material == tiletype_material::POOL ||
@@ -663,6 +660,10 @@ struct jobutils_hook : public df::viewscreen_dwarfmodest
         if (!box_select_enabled)
             return;
 
+        if (ui->main.mode != df::ui_sidebar_mode::Build ||
+            ui_build_selector->building_type != df::building_type::Construction)
+            return;
+
         df::coord vport = Gui::getViewportPos();
 
         //Even if selection drawing is disabled, paint a green cursor as we can place box selection anywhere
@@ -735,7 +736,7 @@ struct jobutils_hook : public df::viewscreen_dwarfmodest
             MaterialDescriptor material = get_material_in_list(ui_build_selector->sel_index);
             if (material.valid)
             {
-                if (input->count(interface_key::SELECT) || input->count(interface_key::SEC_SELECT))
+                if (input->count(interface_key::SELECT) || input->count(interface_key::SELECT_ALL))
                 {
                     if (get_last_moved_material().matches(material))
                         last_used_moved = false; //Keep selected material on top
@@ -749,7 +750,7 @@ struct jobutils_hook : public df::viewscreen_dwarfmodest
                         gen_material.push_back(get_material_in_list(curr_index));
                         box_select_materials.clear();
                         // Populate material list with selected material
-                        populate_box_materials(gen_material, ((input->count(interface_key::SEC_SELECT) && ui_build_selector->is_grouped) ? -1 : 1));
+                        populate_box_materials(gen_material, ((input->count(interface_key::SELECT_ALL) && ui_build_selector->is_grouped) ? -1 : 1));
 
                         input->clear(); // Let the apply_box_selection routine allocate the construction
                         input->insert(interface_key::LEAVESCREEN);
@@ -944,7 +945,7 @@ struct jobutils_hook : public df::viewscreen_dwarfmodest
             {
                 // First valid site is guaranteed to be anchored, either on a tile or against a valid orthogonal tile
                 // Use it as an anchor point to generate materials list
-                anchor = valid_building_sites.front(); 
+                anchor = valid_building_sites.front();
                 valid_building_sites.pop_front();
                 valid_building_sites.push_back(anchor);
             }
@@ -1056,8 +1057,8 @@ struct jobutils_hook : public df::viewscreen_dwarfmodest
         int16_t last_used_constr_subtype = (in_material_choice_stage()) ?  ui_build_selector->building_subtype : -1;
         INTERPOSE_NEXT(feed)(input);
 
-        if (revert_to_last_used_type && 
-            last_used_constr_subtype >= 0 && 
+        if (revert_to_last_used_type &&
+            last_used_constr_subtype >= 0 &&
             in_type_choice_stage() &&
             hotkeys.find(last_used_constr_subtype) != hotkeys.end())
         {
@@ -1162,6 +1163,15 @@ struct jobutils_hook : public df::viewscreen_dwarfmodest
 
                 case SELECT_SECOND:
                     OutputString(COLOR_GREEN, x, y, "Choose second corner", true, left_margin);
+
+                    int32_t curr_x, curr_y, curr_z;
+                    Gui::getCursorCoords(curr_x, curr_y, curr_z);
+                    int dX = abs(box_first.x - curr_x) + 1;
+                    int dY = abs(box_first.y - curr_y) + 1;
+                    stringstream label;
+                    label << "Selection: " << dX << "x" << dY;
+                    OutputString(COLOR_WHITE, x, ++y, label.str(), true, left_margin);
+
                     int cx = box_first.x;
                     int cy = box_first.y;
                     OutputString(COLOR_BROWN, cx, cy, "X");

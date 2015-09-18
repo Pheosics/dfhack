@@ -190,6 +190,13 @@ bool MaterialInfo::find(const std::vector<std::string> &items)
     }
     else if (items.size() == 2)
     {
+        if (items[0] == "COAL" && findBuiltin(items[0])) {
+            if (items[1] == "COKE")
+                this->index = 0;
+            else if (items[1] == "CHARCOAL")
+                this->index = 1;
+            return true;
+        }
         if (items[1] == "NONE" && findBuiltin(items[0]))
             return true;
         if (findPlant(items[0], items[1]))
@@ -472,7 +479,6 @@ void MaterialInfo::getMatchBits(df::job_item_flags1 &ok, df::job_item_flags1 &ma
     TEST(extract_bearing_fish, false);
     TEST(extract_bearing_vermin, false);
     TEST(processable_to_vial, structural && FLAG(plant, plant_raw_flags::EXTRACT_VIAL));
-    TEST(processable_to_bag, structural && FLAG(plant, plant_raw_flags::LEAVES));
     TEST(processable_to_barrel, structural && FLAG(plant, plant_raw_flags::EXTRACT_BARREL));
     TEST(solid, !(MAT_FLAG(ALCOHOL_PLANT) ||
                   MAT_FLAG(ALCOHOL_CREATURE) ||

@@ -47,24 +47,29 @@ using namespace MapExtras;
 using namespace DFHack;
 using namespace df::enums;
 
+DFHACK_PLUGIN("liquids");
+REQUIRE_GLOBAL(world);
+
 CommandHistory liquids_hist;
 
 command_result df_liquids (color_ostream &out, vector <string> & parameters);
 command_result df_liquids_here (color_ostream &out, vector <string> & parameters);
-
-DFHACK_PLUGIN("liquids");
 
 DFhackCExport command_result plugin_init ( color_ostream &out, std::vector <PluginCommand> &commands)
 {
     liquids_hist.load("liquids.history");
     commands.push_back(PluginCommand(
         "liquids", "Place magma, water or obsidian.",
-        df_liquids, true)); // interactive, needs console for prompt
+        df_liquids, true,
+        "This tool allows placing magma, water and other similar things.\n"
+        "It is interactive and further help is available when you run it.\n"
+        "The settings will be remembered until dfhack is closed and you can call\n"
+        "'liquids-here' (mapped to a hotkey) to paint liquids at the cursor position\n"
+        "without the need to go back to the dfhack console.\n")); // interactive, needs console for prompt
     commands.push_back(PluginCommand(
         "liquids-here", "Use settings from liquids at cursor position.",
         df_liquids_here, Gui::cursor_hotkey, // non-interactive, needs ingame cursor
-        "  Identical to pressing enter in liquids, intended for use as keybinding.\n"
-        "  Can (but doesn't need to) be called while liquids is running in the console."));
+        "  This command is intended to be mapped to a hotkey and is identical to pressing Enter in liquids with the current parameters.\n"));
     return CR_OK;
 }
 
@@ -157,14 +162,7 @@ command_result df_liquids (color_ostream &out_, vector <string> & parameters)
     for(size_t i = 0; i < parameters.size();i++)
     {
         if(parameters[i] == "help" || parameters[i] == "?")
-        {
-            out.print(  "This tool allows placing magma, water and other similar things.\n"
-                        "It is interactive and further help is available when you run it.\n"
-                        "The settings will be remembered until dfhack is closed and you can call\n"
-                        "'liquids-here' (mapped to a hotkey) to paint liquids at the cursor position\n"
-                        "without the need to go back to the dfhack console.\n");
-            return CR_OK;
-        }
+            return CR_WRONG_USAGE;
     }
 
     if (!Maps::IsValid())
@@ -375,11 +373,7 @@ command_result df_liquids_here (color_ostream &out, vector <string> & parameters
     for(size_t i = 0; i < parameters.size();i++)
     {
         if(parameters[i] == "help" || parameters[i] == "?")
-        {
-            out << "This command is supposed to be mapped to a hotkey." << endl;
-            out << "It will use the current/last parameters set in liquids." << endl;
-            return CR_OK;
-        }
+            return CR_WRONG_USAGE;
     }
 
     out.print("Run liquids-here with these parameters: ");
@@ -447,7 +441,7 @@ command_result df_liquids_execute(color_ostream &out, OperationMode &cur_mode, d
     coord_vec all_tiles = brush->points(mcache,cursor);
 
     // Force the game to recompute its walkability cache
-    df::global::world->reindex_pathfinding = true;
+    world->reindex_pathfinding = true;
 
     switch (cur_mode.paint)
     {
@@ -617,7 +611,7 @@ command_result df_liquids_execute(color_ostream &out, OperationMode &cur_mode, d
                 case M_KEEP:
                     {
                         auto bflags = (*biter)->BlockFlags();
-                        out << "flow bit 1 = " << bflags.bits.update_liquid << endl; 
+                        out << "flow bit 1 = " << bflags.bits.update_liquid << endl;
                         out << "flow bit 2 = " << bflags.bits.update_liquid_twice << endl;
                     }
                 }

@@ -20,7 +20,10 @@ using std::vector;
 using namespace DFHack;
 using namespace df::enums;
 
-using df::global::world;
+DFHACK_PLUGIN("reveal");
+DFHACK_PLUGIN_IS_ENABLED(is_active);
+
+REQUIRE_GLOBAL(world);
 
 /*
  * Anything that might reveal Hell is unsafe.
@@ -72,20 +75,27 @@ command_result revflood(color_ostream &out, vector<string> & params);
 command_result revforget(color_ostream &out, vector<string> & params);
 command_result nopause(color_ostream &out, vector<string> & params);
 
-DFHACK_PLUGIN("reveal");
-
 DFhackCExport command_result plugin_init ( color_ostream &out, vector <PluginCommand> &commands)
 {
-    commands.push_back(PluginCommand("reveal","Reveal the map. 'reveal hell' will also reveal hell. 'reveal demon' won't pause.",reveal));
-    commands.push_back(PluginCommand("unreveal","Revert the map to its previous state.",unreveal));
-    commands.push_back(PluginCommand("revtoggle","Reveal/unreveal depending on state.",revtoggle));
-    commands.push_back(PluginCommand("revflood","Hide all, reveal all tiles reachable from cursor position.",revflood));
-    commands.push_back(PluginCommand("revforget", "Forget the current reveal data, allowing to use reveal again.",revforget));
-    commands.push_back(PluginCommand("nopause","Disable pausing (doesn't affect pause forced by reveal).",nopause));
+    commands.push_back(PluginCommand("reveal","Reveal the map. 'reveal hell' will also reveal hell. 'reveal demon' won't pause.",reveal,false,
+        "Reveals the map, by default ignoring hell.\n"
+        "Options:\n"
+        "hell     - also reveal hell, while forcing the game to pause.\n"
+        "demon    - reveal hell, do not pause.\n"));
+    commands.push_back(PluginCommand("unreveal","Revert the map to its previous state.",unreveal,false,
+        "Reverts the previous reveal operation, hiding the map again.\n"));
+    commands.push_back(PluginCommand("revtoggle","Reveal/unreveal depending on state.",revtoggle,false,
+        "Toggles between reveal and unreveal.\n"));
+    commands.push_back(PluginCommand("revflood","Hide all, reveal all tiles reachable from cursor position.",revflood,false,
+        "This command hides the whole map. Then, starting from the cursor,\n"
+        "reveals all accessible tiles. Allows repairing parma-revealed maps.\n"));
+    commands.push_back(PluginCommand("revforget", "Forget the current reveal data, allowing to use reveal again.",revforget,false,
+        "Forget the current reveal data, allowing to use reveal again.\n"));
+    commands.push_back(PluginCommand("nopause","Disable pausing (doesn't affect pause forced by reveal).",nopause,false,
+        "Disable pausing (doesn't affect pause forced by reveal).\n"
+        "Activate with 'nopause 1', deactivate with 'nopause 0'.\n"));
     return CR_OK;
 }
-
-DFHACK_PLUGIN_IS_ENABLED(is_active);
 
 DFhackCExport command_result plugin_onupdate ( color_ostream &out )
 {
@@ -160,14 +170,7 @@ command_result reveal(color_ostream &out, vector<string> & params)
         if(params[i]=="hell")
             no_hell = false;
         else if(params[i] == "help" || params[i] == "?")
-        {
-            out.print("Reveals the map, by default ignoring hell.\n"
-                         "Options:\n"
-                         "hell     - also reveal hell, while forcing the game to pause.\n"
-                         "demon    - reveal hell, do not pause.\n"
-            );
-            return CR_OK;
-        }
+            return CR_WRONG_USAGE;
     }
     if(params.size() && params[0] == "hell")
     {
@@ -206,7 +209,7 @@ command_result reveal(color_ostream &out, vector<string> & params)
     }
 
     Maps::getSize(x_max,y_max,z_max);
-    hidesaved.reserve(x_max * y_max * z_max);
+    hidesaved.reserve(world->map.map_blocks.size());
     for (size_t i = 0; i < world->map.map_blocks.size(); i++)
     {
         df::map_block *block = world->map.map_blocks[i];
@@ -254,10 +257,7 @@ command_result unreveal(color_ostream &out, vector<string> & params)
     for(size_t i = 0; i < params.size();i++)
     {
         if(params[i] == "help" || params[i] == "?")
-        {
-            out.print("Reverts the previous reveal operation, hiding the map again.\n");
-            return CR_OK;
-        }
+            return CR_WRONG_USAGE;
     }
     if(!revealed)
     {
@@ -330,12 +330,7 @@ command_result revflood(color_ostream &out, vector<string> & params)
     for(size_t i = 0; i < params.size();i++)
     {
         if(params[i] == "help" || params[i] == "?")
-        {
-            out.print("This command hides the whole map. Then, starting from the cursor,\n"
-                         "reveals all accessible tiles. Allows repairing parma-revealed maps.\n"
-            );
-            return CR_OK;
-        }
+            return CR_WRONG_USAGE;
     }
     CoreSuspender suspend;
     uint32_t x_max,y_max,z_max;
@@ -351,7 +346,7 @@ command_result revflood(color_ostream &out, vector<string> & params)
     }
     t_gamemodes gm;
     World::ReadGameMode(gm);
-    if(gm.g_type != game_type::DWARF_MAIN && gm.g_mode != game_mode::DWARF )
+    if(!World::isFortressMode(gm.g_type) || gm.g_mode != game_mode::DWARF )
     {
         out.printerr("Only in proper dwarf mode.\n");
         return CR_FAILURE;
@@ -434,7 +429,9 @@ command_result revflood(color_ostream &out, vector<string> & params)
         case tiletype_shape::STAIR_UP:
         case tiletype_shape::RAMP:
         case tiletype_shape::FLOOR:
-        case tiletype_shape::TREE:
+        case tiletype_shape::BRANCH:
+        case tiletype_shape::TRUNK_BRANCH:
+        case tiletype_shape::TWIG:
         case tiletype_shape::SAPLING:
         case tiletype_shape::SHRUB:
         case tiletype_shape::BOULDER:
@@ -446,6 +443,12 @@ command_result revflood(color_ostream &out, vector<string> & params)
             above = sides = true;
             break;
         }
+        if (tileMaterial(tt) == tiletype_material::PLANT || tileMaterial(tt) == tiletype_material::MUSHROOM)
+        {
+            if(from_below)
+                unhide = 0;
+            above = sides = true;
+        }
         if(unhide)
         {
             des.bits.hidden = false;
@@ -453,22 +456,22 @@ command_result revflood(color_ostream &out, vector<string> & params)
         }
         if(sides)
         {
-            flood.push(foo(DFCoord(current.x + 1, current.y ,current.z),0));
-            flood.push(foo(DFCoord(current.x + 1, current.y + 1 ,current.z),0));
-            flood.push(foo(DFCoord(current.x, current.y + 1 ,current.z),0));
-            flood.push(foo(DFCoord(current.x - 1, current.y + 1 ,current.z),0));
-            flood.push(foo(DFCoord(current.x - 1, current.y ,current.z),0));
-            flood.push(foo(DFCoord(current.x - 1, current.y - 1 ,current.z),0));
-            flood.push(foo(DFCoord(current.x, current.y - 1 ,current.z),0));
-            flood.push(foo(DFCoord(current.x + 1, current.y - 1 ,current.z),0));
+            flood.push(foo(DFCoord(current.x + 1, current.y ,current.z),false));
+            flood.push(foo(DFCoord(current.x + 1, current.y + 1 ,current.z),false));
+            flood.push(foo(DFCoord(current.x, current.y + 1 ,current.z),false));
+            flood.push(foo(DFCoord(current.x - 1, current.y + 1 ,current.z),false));
+            flood.push(foo(DFCoord(current.x - 1, current.y ,current.z),false));
+            flood.push(foo(DFCoord(current.x - 1, current.y - 1 ,current.z),false));
+            flood.push(foo(DFCoord(current.x, current.y - 1 ,current.z),false));
+            flood.push(foo(DFCoord(current.x + 1, current.y - 1 ,current.z),false));
         }
         if(above)
         {
-            flood.push(foo(DFCoord(current.x, current.y ,current.z + 1),1));
+            flood.push(foo(DFCoord(current.x, current.y ,current.z + 1),true));
         }
         if(below)
         {
-            flood.push(foo(DFCoord(current.x, current.y ,current.z - 1),0));
+            flood.push(foo(DFCoord(current.x, current.y ,current.z - 1),false));
         }
     }
     MCache->WriteAll();
@@ -482,10 +485,7 @@ command_result revforget(color_ostream &out, vector<string> & params)
     for(size_t i = 0; i < params.size();i++)
     {
         if(params[i] == "help" || params[i] == "?")
-        {
-            out.print("Forget the current reveal data, allowing to use reveal again.\n");
-            return CR_OK;
-        }
+            return CR_WRONG_USAGE;
     }
     if(!revealed)
     {

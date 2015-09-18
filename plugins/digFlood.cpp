@@ -21,9 +21,10 @@
 using namespace DFHack;
 using namespace std;
 
-command_result digFlood (color_ostream &out, std::vector <std::string> & parameters);
-
 DFHACK_PLUGIN("digFlood");
+REQUIRE_GLOBAL(world);
+
+command_result digFlood (color_ostream &out, std::vector <std::string> & parameters);
 
 void onDig(color_ostream& out, void* ptr);
 void maybeExplore(color_ostream& out, MapExtras::MapCache& cache, df::coord pt, set<df::coord>& jobLocations);
@@ -37,7 +38,7 @@ set<string> autodigMaterials;
 DFhackCExport command_result plugin_enable(color_ostream& out, bool enable) {
     if (enabled == enable)
         return CR_OK;
-    
+
     enabled = enable;
     if ( enabled ) {
         EventManager::registerListener(EventManager::EventType::JOB_COMPLETED, digHandler, plugin_self);
@@ -68,7 +69,7 @@ DFhackCExport command_result plugin_init ( color_ostream &out, std::vector <Plug
         "  digFlood digAll0\n"
         "    disable digAll mode\n"
         "\n"
-        "Note that while order matters, multiple commands can be sequenced in one line. It is recommended to alter your dfhack.init file so that you won't have to type in every mineral type you want to dig every time you start the game. Material names are case sensitive.\n"
+        "Note that while order matters, multiple commands can be sequenced in one line. It is recommended to alter your save-specific regionX/raw/onLoad.init or global onLoadWorld.init file so that you won't have to type in every mineral type you want to dig every time you start the game. Material names are case sensitive.\n"
     ));
     return CR_OK;
 }
@@ -78,31 +79,31 @@ void onDig(color_ostream& out, void* ptr) {
     df::job* job = (df::job*)ptr;
     if ( job->completion_timer > 0 )
         return;
-    
+
     if ( job->job_type != df::enums::job_type::Dig &&
-         job->job_type != df::enums::job_type::CarveUpwardStaircase && 
-         job->job_type != df::enums::job_type::CarveDownwardStaircase && 
-         job->job_type != df::enums::job_type::CarveUpDownStaircase && 
-         job->job_type != df::enums::job_type::CarveRamp && 
+         job->job_type != df::enums::job_type::CarveUpwardStaircase &&
+         job->job_type != df::enums::job_type::CarveDownwardStaircase &&
+         job->job_type != df::enums::job_type::CarveUpDownStaircase &&
+         job->job_type != df::enums::job_type::CarveRamp &&
          job->job_type != df::enums::job_type::DigChannel )
         return;
-    
+
     set<df::coord> jobLocations;
-    for ( df::job_list_link* link = &df::global::world->job_list; link != NULL; link = link->next ) {
+    for ( df::job_list_link* link = &world->job_list; link != NULL; link = link->next ) {
         if ( link->item == NULL )
             continue;
-        
+
         if ( link->item->job_type != df::enums::job_type::Dig &&
-             link->item->job_type != df::enums::job_type::CarveUpwardStaircase && 
-             link->item->job_type != df::enums::job_type::CarveDownwardStaircase && 
-             link->item->job_type != df::enums::job_type::CarveUpDownStaircase && 
-             link->item->job_type != df::enums::job_type::CarveRamp && 
+             link->item->job_type != df::enums::job_type::CarveUpwardStaircase &&
+             link->item->job_type != df::enums::job_type::CarveDownwardStaircase &&
+             link->item->job_type != df::enums::job_type::CarveUpDownStaircase &&
+             link->item->job_type != df::enums::job_type::CarveRamp &&
              link->item->job_type != df::enums::job_type::DigChannel )
             continue;
-        
+
         jobLocations.insert(link->item->pos);
     }
-    
+
     MapExtras::MapCache cache;
     df::coord pos = job->pos;
     for ( int16_t a = -1; a <= 1; a++ ) {
@@ -117,23 +118,23 @@ void maybeExplore(color_ostream& out, MapExtras::MapCache& cache, df::coord pt, 
     if ( !Maps::isValidTilePos(pt) ) {
         return;
     }
-    
+
     df::map_block* block = Maps::getTileBlock(pt);
     if (!block)
         return;
-    
+
     if ( block->designation[pt.x&0xF][pt.y&0xF].bits.hidden )
         return;
-    
+
     df::tiletype type = block->tiletype[pt.x&0xF][pt.y&0xF];
     if ( ENUM_ATTR(tiletype, material, type) != df::enums::tiletype_material::MINERAL )
         return;
     if ( ENUM_ATTR(tiletype, shape, type) != df::enums::tiletype_shape::WALL )
         return;
-    
+
     if ( block->designation[pt.x&0xF][pt.y&0xF].bits.dig != df::enums::tile_dig_designation::No )
         return;
-    
+
     uint32_t xMax,yMax,zMax;
     Maps::getSize(xMax,yMax,zMax);
     if ( pt.x == 0 || pt.y == 0 || pt.x+1 == xMax*16 || pt.y+1 == yMax*16 )
@@ -141,21 +142,21 @@ void maybeExplore(color_ostream& out, MapExtras::MapCache& cache, df::coord pt, 
     if ( jobLocations.find(pt) != jobLocations.end() ) {
         return;
     }
-    
+
     int16_t mat = cache.veinMaterialAt(pt);
     if ( mat == -1 )
         return;
     if ( !digAll ) {
-        df::inorganic_raw* inorganic = df::global::world->raws.inorganics[mat];
+        df::inorganic_raw* inorganic = world->raws.inorganics[mat];
         if ( autodigMaterials.find(inorganic->id) == autodigMaterials.end() ) {
             return;
         }
     }
-    
+
     block->designation[pt.x&0xF][pt.y&0xF].bits.dig = df::enums::tile_dig_designation::Default;
     block->flags.bits.designated = true;
-//    *df::global::process_dig  = true;
-//    *df::global::process_jobs = true;
+//    *process_dig  = true;
+//    *process_jobs = true;
 }
 
 command_result digFlood (color_ostream &out, std::vector <std::string> & parameters)
@@ -173,10 +174,12 @@ command_result digFlood (color_ostream &out, std::vector <std::string> & paramet
             adding = true;
             continue;
         }
-        
-        if ( parameters[a] == "CLEAR" )
+
+        if ( parameters[a] == "CLEAR" ) {
             autodigMaterials.clear();
-        
+            continue;
+        }
+
         if ( parameters[a] == "digAll0" ) {
             digAll = false;
             continue;
@@ -185,9 +188,9 @@ command_result digFlood (color_ostream &out, std::vector <std::string> & paramet
             digAll = true;
             continue;
         }
-        
-        for ( size_t b = 0; b < df::global::world->raws.inorganics.size(); b++ ) {
-            df::inorganic_raw* inorganic = df::global::world->raws.inorganics[b];
+
+        for ( size_t b = 0; b < world->raws.inorganics.size(); b++ ) {
+            df::inorganic_raw* inorganic = world->raws.inorganics[b];
             if ( parameters[a] == inorganic->id ) {
                 if ( adding )
                     toAdd.insert(parameters[a]);
@@ -196,16 +199,16 @@ command_result digFlood (color_ostream &out, std::vector <std::string> & paramet
                 goto loop;
             }
         }
-        
+
         out.print("Could not find material \"%s\".\n", parameters[a].c_str());
         return CR_WRONG_USAGE;
-        
+
         loop: continue;
     }
-    
+
     autodigMaterials.insert(toAdd.begin(), toAdd.end());
     for ( auto a = toRemove.begin(); a != toRemove.end(); a++ )
         autodigMaterials.erase(*a);
-    
+
     return CR_OK;
 }

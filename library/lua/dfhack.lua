@@ -10,6 +10,14 @@ local dfhack = dfhack
 local base_env = dfhack.BASE_G
 local _ENV = base_env
 
+CR_LINK_FAILURE = -3
+CR_NEEDS_CONSOLE = -2
+CR_NOT_IMPLEMENTED = -1
+CR_OK = 0
+CR_FAILURE = 1
+CR_WRONG_USAGE = 2
+CR_NOT_FOUND = 3
+
 -- Console color constants
 
 COLOR_RESET = -1
@@ -75,7 +83,27 @@ dfhack.exception.__index = dfhack.exception
 
 -- Module loading
 
+local function find_required_module_arg()
+    -- require -> module code -> mkmodule -> find_...
+    if debug.getinfo(4,'f').func == require then
+        return debug.getlocal(4, 1)
+    end
+    -- reload -> dofile -> module code -> mkmodule -> find_...
+    if debug.getinfo(5,'f').func == reload then
+        return debug.getlocal(5, 1)
+    end
+end
+
 function mkmodule(module,env)
+    -- Verify that the module name is correct
+    local _, rq_modname = find_required_module_arg()
+    if not rq_modname then
+        error('The mkmodule function must be used at the start of a module')
+    end
+    if rq_modname ~= module then
+        error('Found module '..module..' during require '..rq_modname)
+    end
+    -- Reuse the already loaded module table
     local pkg = package.loaded[module]
     if pkg == nil then
         pkg = {}
@@ -84,6 +112,7 @@ function mkmodule(module,env)
             error("Not a table in package.loaded["..module.."]")
         end
     end
+    -- Inject the plugin-exported functions when appropriate
     local plugname = string.match(module,'^plugins%.([%w%-]+)$')
     if plugname then
         dfhack.open_plugin(pkg,plugname)
@@ -131,6 +160,15 @@ PERIOD = "."
 
 function printall(table)
     local ok,f,t,k = pcall(pairs,table)
+    if ok then
+        for k,v in f,t,k do
+            print(string.format("%-23s\t = %s",tostring(k),tostring(v)))
+        end
+    end
+end
+
+function printall_ipairs(table)
+    local ok,f,t,k = pcall(ipairs,table)
     if ok then
         for k,v in f,t,k do
             print(string.format("%-23s\t = %s",tostring(k),tostring(v)))
@@ -256,7 +294,9 @@ function dfhack.interpreter(prompt,hfile,env)
         print("Shortcuts:\n"..
               " '= foo' => '_1,_2,... = foo'\n"..
               " '! foo' => 'print(foo)'\n"..
-              "Both save the first result as '_'.")
+              " '~ foo' => 'printall(foo)'\n"..
+              " '@ foo' => 'printall_ipairs(foo)'\n"..
+              "All of these save the first result as '_'.")
         print_banner = false
     end
 
@@ -274,6 +314,10 @@ function dfhack.interpreter(prompt,hfile,env)
         ['~'] = function(data)
             print(table.unpack(data,2,data.n))
             printall(data[2])
+        end,
+        ['@'] = function(data)
+            print(table.unpack(data,2,data.n))
+            printall_ipairs(data[2])
         end,
         ['='] = function(data)
             for i=2,data.n do
@@ -337,24 +381,124 @@ end
 local internal = dfhack.internal
 
 internal.scripts = internal.scripts or {}
+internal.scriptPath = internal.scriptPath or {}
+internal.scriptMtime = internal.scriptMtime or {}
+internal.scriptRun = internal.scriptRun or {}
 
 local scripts = internal.scripts
+local scriptPath = internal.scriptPath
+local scriptMtime = internal.scriptMtime
+local scriptRun = internal.scriptRun
+
 local hack_path = dfhack.getHackPath()
 
+function dfhack.findScript(name)
+    local file
+    file = dfhack.getSavePath()
+    if file then
+        file = file .. '/raw/scripts/' .. name .. '.lua'
+        if dfhack.filesystem.exists(file) then
+            return file
+        end
+    end
+    local path = dfhack.getDFPath()
+    file = path..'/raw/scripts/' .. name .. '.lua'
+    if dfhack.filesystem.exists(file) then
+        return file
+    end
+    file = path..'/hack/scripts/'..name..'.lua'
+    if dfhack.filesystem.exists(file) then
+        return file
+    end
+    return nil
+end
+
 function dfhack.run_script(name,...)
-    local key = string.lower(name)
-    local file = hack_path..'scripts/'..name..'.lua'
-    local env = scripts[key]
+    return dfhack.run_script_with_env(nil,name,...)
+end
+
+function dfhack.script_environment(name)
+    _, env = dfhack.run_script_with_env({moduleMode=true}, name)
+    return env
+end
+
+function dfhack.run_script_with_env(envVars,name,...)
+    local file = dfhack.findScript(name)
+    if not file then
+        error('Could not find script ' .. name)
+    end
+    if scriptPath[name] and scriptPath[name] ~= file then
+        --new file path: must have loaded a different save or unloaded
+        scriptPath[name] = file
+        scriptMtime[file] = dfhack.filesystem.mtime(file)
+        --it is the responsibility of the script to clear its own data on unload so it's safe for us to not delete it here
+    end
+
+    local env = scripts[file]
     if env == nil then
         env = {}
         setmetatable(env, { __index = base_env })
     end
-    local f,perr = loadfile(file, 't', env)
-    if f == nil then
-        error(perr)
+    for x,y in pairs(envVars or {}) do
+        env[x] = y
     end
-    scripts[key] = env
-    return f(...)
+    local f
+    local perr
+    local time = dfhack.filesystem.mtime(file)
+    if time == scriptMtime[file] and scriptRun[file] then
+        f = scriptRun[file]
+    else
+        --reload
+        f, perr = loadfile(file, 't', env)
+        if not f then
+            error(perr)
+        end
+        -- avoid updating mtime if the script failed to load
+        scriptMtime[file] = time
+    end
+    scripts[file] = env
+    scriptRun[file] = f
+    return f(...), env
+end
+
+local function _run_command(...)
+    args = {...}
+    if type(args[1]) == 'table' then
+        command = args[1]
+    elseif #args > 1 and type(args[2]) == 'table' then
+        -- {args[1]} + args[2]
+        command = args[2]
+        table.insert(command, 1, args[1])
+    elseif #args == 1 and type(args[1]) == 'string' then
+        command = args[1]
+    elseif #args > 1 and type(args[1]) == 'string' then
+        command = args
+    else
+        error('Invalid arguments')
+    end
+    return internal.runCommand(command)
+end
+
+function dfhack.run_command_silent(...)
+    local result = _run_command(...)
+    local output = ""
+    for i, f in pairs(result) do
+        if type(f) == 'table' then
+            output = output .. f[2]
+        end
+    end
+    return output, result.status
+end
+
+function dfhack.run_command(...)
+    local output, status = _run_command(...)
+    for i, fragment in pairs(output) do
+        if type(fragment) == 'table' then
+            dfhack.color(fragment[1])
+            dfhack.print(fragment[2])
+        end
+    end
+    dfhack.color(COLOR_RESET)
 end
 
 -- Per-save init file
@@ -366,11 +510,28 @@ function dfhack.getSavePath()
 end
 
 if dfhack.is_core_context then
+    local function loadInitFile(path, name)
+        local env = setmetatable({ SAVE_PATH = path }, { __index = base_env })
+        local f,perr = loadfile(name, 't', env)
+        if f == nil then
+            if dfhack.filesystem.exists(name) then
+                dfhack.printerr(perr)
+            end
+        elseif safecall(f) then
+            if not internal.save_init then
+                internal.save_init = {}
+            end
+            table.insert(internal.save_init, env)
+        end
+    end
+
     dfhack.onStateChange.DFHACK_PER_SAVE = function(op)
         if op == SC_WORLD_LOADED or op == SC_WORLD_UNLOADED then
             if internal.save_init then
-                if internal.save_init.onUnload then
-                    safecall(internal.save_init.onUnload)
+                for k,v in ipairs(internal.save_init) do
+                    if v.onUnload then
+                        safecall(v.onUnload)
+                    end
                 end
                 internal.save_init = nil
             end
@@ -378,18 +539,24 @@ if dfhack.is_core_context then
             local path = dfhack.getSavePath()
 
             if path and op == SC_WORLD_LOADED then
-                local env = setmetatable({ SAVE_PATH = path }, { __index = base_env })
-                local f,perr = loadfile(path..'/raw/init.lua', 't', env)
-                if f == nil then
-                    if not string.match(perr, 'No such file or directory') then
-                        dfhack.printerr(perr)
+                loadInitFile(path, path..'/raw/init.lua')
+
+                local dirlist = dfhack.internal.getDir(path..'/raw/init.d/')
+                if dirlist then
+                    table.sort(dirlist)
+                    for i,name in ipairs(dirlist) do
+                        if string.match(name,'%.lua$') then
+                            loadInitFile(path, path..'/raw/init.d/'..name)
+                        end
                     end
-                elseif safecall(f) then
-                    internal.save_init = env
                 end
             end
-        elseif internal.save_init and internal.save_init.onStateChange then
-            safecall(internal.save_init.onStateChange, op)
+        elseif internal.save_init then
+            for k,v in ipairs(internal.save_init) do
+                if v.onStateChange then
+                    safecall(v.onStateChange, op)
+                end
+            end
         end
     end
 end

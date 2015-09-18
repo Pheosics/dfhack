@@ -13,12 +13,14 @@ using std::string;
 using namespace DFHack;
 using namespace df::enums;
 
+DFHACK_PLUGIN("weather");
+
+REQUIRE_GLOBAL(current_weather);
+
 bool locked = false;
 unsigned char locked_data[25];
 
 command_result weather (color_ostream &out, vector <string> & parameters);
-
-DFHACK_PLUGIN("weather");
 
 DFhackCExport command_result plugin_init ( color_ostream &out, std::vector <PluginCommand> &commands)
 {
@@ -84,7 +86,7 @@ command_result weather (color_ostream &con, vector <string> & parameters)
 
     CoreSuspender suspend;
 
-    if(!df::global::current_weather)
+    if(!current_weather)
     {
         con << "Weather support seems broken :(" << std::endl;
         return CR_FAILURE;
@@ -97,7 +99,7 @@ command_result weather (color_ostream &con, vector <string> & parameters)
         {
             for(int x = 0; x<5;x++)
             {
-                switch((*df::global::current_weather)[x][y])
+                switch((*current_weather)[x][y])
                 {
                 case weather_type::None:
                     con << "C ";
@@ -109,7 +111,7 @@ command_result weather (color_ostream &con, vector <string> & parameters)
                     con << "S ";
                     break;
                 default:
-                    con << (int) (*df::global::current_weather)[x][y] << " ";
+                    con << (int) (*current_weather)[x][y] << " ";
                     break;
                 }
             }

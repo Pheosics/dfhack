@@ -143,6 +143,7 @@ behavior_strings[] = {
 
 void Process::getMemRanges( vector<t_memrange> & ranges )
 {
+    static bool log_ranges = (getenv("DFHACK_LOG_MEM_RANGES") != NULL);
 
     kern_return_t kr;
     task_t the_task;
@@ -188,8 +189,10 @@ void Process::getMemRanges( vector<t_memrange> & ranges )
             temp.valid = true;
             ranges.push_back(temp);
 
-            fprintf(stderr,
-            "%08x-%08x %8uK %c%c%c/%c%c%c %11s %6s %10s uwir=%hu sub=%u dlname: %s\n",
+            if (log_ranges)
+            {
+                fprintf(stderr,
+                "%08x-%08x %8uK %c%c%c/%c%c%c %11s %6s %10s uwir=%hu sub=%u dlname: %s\n",
                             address, (address + vmsize), (vmsize >> 10),
                             (info.protection & VM_PROT_READ)        ? 'r' : '-',
                             (info.protection & VM_PROT_WRITE)       ? 'w' : '-',
@@ -203,6 +206,7 @@ void Process::getMemRanges( vector<t_memrange> & ranges )
                             info.user_wired_count,
                             info.reserved,
                             dlinfo.dli_fname);
+            }
 
             address += vmsize;
         } else if (kr != KERN_INVALID_ADDRESS) {
@@ -222,7 +226,7 @@ void Process::getMemRanges( vector<t_memrange> & ranges )
 
 uintptr_t Process::getBase()
 {
-    return 0x1000000;
+    return 0x1000;
 }
 
 int Process::adjustOffset(int offset, bool /*to_file*/)
@@ -244,28 +248,6 @@ static int getdir (string dir, vector<string> &files)
     }
     closedir(dp);
     return 0;
-}
-
-bool Process::getThreadIDs(vector<uint32_t> & threads )
-{
-    stringstream ss;
-    vector<string> subdirs;
-    if(getdir("/proc/self/task/",subdirs) != 0)
-    {
-        //FIXME: needs exceptions. this is a fatal error
-        cerr << "unable to enumerate threads. This is BAD!" << endl;
-        return false;
-    }
-    threads.clear();
-    for(size_t i = 0; i < subdirs.size();i++)
-    {
-        uint32_t tid;
-        if(sscanf(subdirs[i].c_str(),"%d", &tid))
-        {
-            threads.push_back(tid);
-        }
-    }
-    return true;
 }
 
 uint32_t Process::getTickCount()

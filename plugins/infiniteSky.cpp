@@ -23,16 +23,17 @@ using namespace std;
 using namespace DFHack;
 using namespace df::enums;
 
-command_result infiniteSky (color_ostream &out, std::vector <std::string> & parameters);
-
 DFHACK_PLUGIN("infiniteSky");
+REQUIRE_GLOBAL(world);
+
+command_result infiniteSky (color_ostream &out, std::vector <std::string> & parameters);
 
 DFhackCExport command_result plugin_init ( color_ostream &out, std::vector <PluginCommand> &commands)
 {
     commands.push_back(PluginCommand(
-        "infiniteSky", 
+        "infiniteSky",
         "Creates new sky levels on request, or as you construct up.",
-        infiniteSky, false, 
+        infiniteSky, false,
         "Usage:\n"
         "  infiniteSky\n"
         "    creates one more z-level\n"
@@ -87,25 +88,24 @@ DFhackCExport command_result plugin_onupdate ( color_ostream &out )
         if ( mode.g_mode != df::enums::game_mode::DWARF )
             return CR_OK;
     }
-    
-    if ( df::global::world->constructions.size() == constructionSize )
+
+    if ( world->constructions.size() == constructionSize )
         return CR_OK;
-    int32_t zNow = df::global::world->map.z_count_block;
-    for ( size_t a = constructionSize; a < df::global::world->constructions.size(); a++ ) {
-        df::construction* construct = df::global::world->constructions[a];
+    int32_t zNow = world->map.z_count_block;
+    for ( size_t a = constructionSize; a < world->constructions.size(); a++ ) {
+        df::construction* construct = world->constructions[a];
         if ( construct->pos.z+2 < zNow )
             continue;
         doInfiniteSky(out, 1);
-        zNow = df::global::world->map.z_count_block;
+        zNow = world->map.z_count_block;
         ///break;
     }
-    constructionSize = df::global::world->constructions.size();
-    
+    constructionSize = world->constructions.size();
+
     return CR_OK;
 }
 
 void doInfiniteSky(color_ostream& out, int32_t howMany) {
-    df::world* world = df::global::world;
     CoreSuspender suspend;
     int32_t x_count_block = world->map.x_count_block;
     int32_t y_count_block = world->map.y_count_block;
@@ -144,15 +144,15 @@ void doInfiniteSky(color_ostream& out, int32_t howMany) {
             }
         }
         df::z_level_flags* flags = new df::z_level_flags[z_count_block+1];
-        memcpy(flags, world->map.z_level_flags, z_count_block*sizeof(df::z_level_flags));
+        memcpy(flags, world->map_extras.z_level_flags, z_count_block*sizeof(df::z_level_flags));
         flags[z_count_block].whole = 0;
         flags[z_count_block].bits.update = 1;
         world->map.z_count_block++;
         world->map.z_count++;
-        delete[] world->map.z_level_flags;
-        world->map.z_level_flags = flags;
+        delete[] world->map_extras.z_level_flags;
+        world->map_extras.z_level_flags = flags;
     }
-    
+
 }
 
 DFhackCExport command_result plugin_enable(color_ostream &out, bool enable)

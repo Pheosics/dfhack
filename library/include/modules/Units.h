@@ -41,7 +41,7 @@ namespace df
 {
     struct nemesis_record;
     struct burrow;
-    struct assumed_identity;
+    struct identity;
     struct historical_entity;
     struct entity_position_assignment;
     struct entity_position;
@@ -213,7 +213,7 @@ DFHACK_EXPORT df::item *getContainer(df::unit *unit);
 DFHACK_EXPORT void setNickname(df::unit *unit, std::string nick);
 DFHACK_EXPORT df::language_name *getVisibleName(df::unit *unit);
 
-DFHACK_EXPORT df::assumed_identity *getIdentity(df::unit *unit);
+DFHACK_EXPORT df::identity *getIdentity(df::unit *unit);
 DFHACK_EXPORT df::nemesis_record *getNemesis(df::unit *unit);
 
 DFHACK_EXPORT bool isHidingCurse(df::unit *unit);
@@ -233,6 +233,35 @@ DFHACK_EXPORT bool isAlive(df::unit *unit);
 DFHACK_EXPORT bool isSane(df::unit *unit);
 DFHACK_EXPORT bool isCitizen(df::unit *unit);
 DFHACK_EXPORT bool isDwarf(df::unit *unit);
+DFHACK_EXPORT bool isWar(df::unit* unit);
+DFHACK_EXPORT bool isHunter(df::unit* unit);
+DFHACK_EXPORT bool isAvailableForAdoption(df::unit* unit);
+DFHACK_EXPORT bool isOwnCiv(df::unit* unit);
+DFHACK_EXPORT bool isOwnRace(df::unit* unit);
+
+DFHACK_EXPORT std::string getRaceNameById(int32_t race_id);
+DFHACK_EXPORT std::string getRaceName(df::unit* unit);
+DFHACK_EXPORT std::string getRaceNamePluralById(int32_t race_id);
+DFHACK_EXPORT std::string getRaceNamePlural(df::unit* unit);
+DFHACK_EXPORT std::string getRaceBabyNameById(int32_t race_id);
+DFHACK_EXPORT std::string getRaceBabyName(df::unit* unit);
+DFHACK_EXPORT std::string getRaceChildNameById(int32_t race_id);
+DFHACK_EXPORT std::string getRaceChildName(df::unit* unit);
+
+DFHACK_EXPORT bool isBaby(df::unit* unit);
+DFHACK_EXPORT bool isChild(df::unit* unit);
+DFHACK_EXPORT bool isAdult(df::unit* unit);
+DFHACK_EXPORT bool isEggLayer(df::unit* unit);
+DFHACK_EXPORT bool isGrazer(df::unit* unit);
+DFHACK_EXPORT bool isMilkable(df::unit* unit);
+DFHACK_EXPORT bool isTrainableWar(df::unit* unit);
+DFHACK_EXPORT bool isTrainableHunting(df::unit* unit);
+DFHACK_EXPORT bool isTamable(df::unit* unit);
+DFHACK_EXPORT bool isMale(df::unit* unit);
+DFHACK_EXPORT bool isFemale(df::unit* unit);
+DFHACK_EXPORT bool isMerchant(df::unit* unit);
+DFHACK_EXPORT bool isForest(df::unit* unit);
+DFHACK_EXPORT bool isMarkedForSlaughter(df::unit* unit);
 
 DFHACK_EXPORT double getAge(df::unit *unit, bool true_age = false);
 
@@ -241,6 +270,7 @@ DFHACK_EXPORT int getEffectiveSkill(df::unit *unit, df::job_skill skill_id);
 DFHACK_EXPORT int getExperience(df::unit *unit, df::job_skill skill_id, bool total = false);
 
 DFHACK_EXPORT int computeMovementSpeed(df::unit *unit);
+DFHACK_EXPORT float computeSlowdownFactor(df::unit *unit);
 
 struct NoblePosition {
     df::historical_entity *entity;
@@ -255,6 +285,8 @@ DFHACK_EXPORT std::string getCasteProfessionName(int race, int caste, df::profes
 
 DFHACK_EXPORT int8_t getProfessionColor(df::unit *unit, bool ignore_noble = false);
 DFHACK_EXPORT int8_t getCasteProfessionColor(int race, int caste, df::profession pid);
+
+DFHACK_EXPORT std::string getSquadName(df::unit *unit);
 }
 }
 #endif

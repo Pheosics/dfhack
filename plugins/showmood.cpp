@@ -7,6 +7,7 @@
 #include "modules/Materials.h"
 #include "modules/Translation.h"
 #include "modules/Items.h"
+#include "modules/Units.h"
 
 #include "DataDefs.h"
 #include "df/world.h"
@@ -25,7 +26,8 @@ using std::vector;
 using namespace DFHack;
 using namespace df::enums;
 
-using df::global::world;
+DFHACK_PLUGIN("showmood");
+REQUIRE_GLOBAL(world);
 
 command_result df_showmood (color_ostream &out, vector <string> & parameters)
 {
@@ -152,7 +154,7 @@ command_result df_showmood (color_ostream &out, vector <string> & parameters)
             break;
         }
         out.print(".\n");
-        if (unit->sex)
+        if (Units::isMale(unit))
             out.print("He has ");
         else
             out.print("She has ");
@@ -165,11 +167,6 @@ command_result df_showmood (color_ostream &out, vector <string> & parameters)
         else
             out.print("not yet claimed a workshop but will want");
         out.print(" the following items:\n");
-
-        // total amount of stuff fetched so far
-        int count_got = 0;
-        for (size_t i = 0; i < job->items.size(); i++)
-            count_got += job->items[i]->item->getTotalDimension();
 
         for (size_t i = 0; i < job->job_items.size(); i++)
         {
@@ -273,13 +270,21 @@ command_result df_showmood (color_ostream &out, vector <string> & parameters)
                 }
             }
 
-            // total amount of stuff fetched for this requirement
-            // XXX may fail with cloth/thread/bars if need 1 and fetch 2
-            int got = count_got;
-            if (got > item->quantity)
-                got = item->quantity;
-            out.print(", quantity %i (got %i)\n", item->quantity, got);
-            count_got -= got;
+            // count how many items of this type the crafter already collected
+            {
+                int count_got = 0;
+                for (size_t j = 0; j < job->items.size(); j++)
+                {
+                    if(job->items[j]->job_item_idx == i)
+                    {
+                        if (item->item_type == item_type::BAR || item->item_type == item_type::CLOTH)
+                            count_got += job->items[j]->item->getTotalDimension();
+                        else
+                            count_got += 1;
+                    }
+                }
+                out.print(", quantity %i (got %i)\n", item->quantity, count_got);
+            }
         }
     }
     if (!found)
@@ -288,11 +293,10 @@ command_result df_showmood (color_ostream &out, vector <string> & parameters)
     return CR_OK;
 }
 
-DFHACK_PLUGIN("showmood");
-
 DFhackCExport command_result plugin_init (color_ostream &out, std::vector<PluginCommand> &commands)
 {
-    commands.push_back(PluginCommand("showmood", "Shows items needed for current strange mood.", df_showmood));
+    commands.push_back(PluginCommand("showmood", "Shows items needed for current strange mood.", df_showmood, false,
+        "Run this command without any parameters to display information on the currently active Strange Mood."));
     return CR_OK;
 }
 

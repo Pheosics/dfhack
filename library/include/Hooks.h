@@ -33,6 +33,8 @@ distribution.
 #include <string>
 #include <stdint.h>
 
+#include "modules/Graphic.h"
+
 // function and variable pointer... we don't try to understand what SDL does here
 typedef void * fPtr;
 typedef void * vPtr;
@@ -45,6 +47,7 @@ namespace SDL
 // these functions are here because they call into DFHack::Core and therefore need to
 // be declared as friend functions/known
 #ifdef _DARWIN
+#include "modules/Graphic.h"
 DFhackCExport int DFH_SDL_NumJoysticks(void);
 DFhackCExport void DFH_SDL_Quit(void);
 DFhackCExport int DFH_SDL_PollEvent(SDL::Event* event);
@@ -53,8 +56,24 @@ DFhackCExport int DFH_SDL_Init(uint32_t flags);
 DFhackCExport int SDL_NumJoysticks(void);
 DFhackCExport void SDL_Quit(void);
 DFhackCExport int SDL_PollEvent(SDL::Event* event);
+DFhackCExport int SDL_PushEvent(SDL::Event* event);
 DFhackCExport int SDL_Init(uint32_t flags);
 DFhackCExport int wgetch(WINDOW * win);
+
+DFhackCExport int SDL_UpperBlit(DFHack::DFSDL_Surface* src, DFHack::DFSDL_Rect* srcrect, DFHack::DFSDL_Surface* dst, DFHack::DFSDL_Rect* dstrect);
+DFhackCExport vPtr SDL_CreateRGBSurface(uint32_t flags, int width, int height, int depth,
+                                     uint32_t Rmask, uint32_t Gmask, uint32_t Bmask, uint32_t Amask);
+DFhackCExport vPtr SDL_CreateRGBSurfaceFrom(vPtr pixels, int width, int height, int depth, int pitch,
+                                         uint32_t Rmask, uint32_t Gmask, uint32_t Bmask, uint32_t Amask);
+DFhackCExport void SDL_FreeSurface(vPtr surface);
+DFhackCExport vPtr SDL_ConvertSurface(vPtr surface, vPtr format, uint32_t flags);
+DFhackCExport int SDL_LockSurface(vPtr surface);
+DFhackCExport void SDL_UnlockSurface(vPtr surface);
+DFhackCExport uint8_t SDL_GetMouseState(int *x, int *y);
+DFhackCExport void * SDL_GetVideoSurface(void);
+
+DFhackCExport int SDL_SemWait(vPtr sem);
+DFhackCExport int SDL_SemPost(vPtr sem);
 
 // hook - called early from DF's main()
 DFhackCExport int egg_init(void);

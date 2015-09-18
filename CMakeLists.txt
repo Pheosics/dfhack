@@ -58,11 +58,10 @@ if (NOT EXISTS ${dfhack_SOURCE_DIR}/library/xml/codegen.pl OR NOT EXISTS ${dfhac
 endif()
 
 # set up versioning.
-set(DF_VERSION "0.34.11")
-SET(DFHACK_RELEASE "r4" CACHE STRING "Current release revision.")
+set(DF_VERSION "0.40.24")
+SET(DFHACK_RELEASE "r3")
 
 set(DFHACK_VERSION "${DF_VERSION}-${DFHACK_RELEASE}")
-add_definitions(-DDFHACK_VERSION="${DFHACK_VERSION}")
 
 ## where to install things (after the build is done, classic 'make install' or package structure)
 # the dfhack libraries will be installed here:
@@ -168,7 +167,7 @@ add_subdirectory(depends)
 IF(BUILD_LIBRARY)
     add_subdirectory (library)
     ## install the default documentation files
-    install(FILES LICENSE "Lua API.html" Readme.html Compile.html Contributors.html DESTINATION ${DFHACK_USERDOC_DESTINATION})
+    install(FILES LICENSE NEWS "Lua API.html" Readme.html Compile.html Contributors.html DESTINATION ${DFHACK_USERDOC_DESTINATION})
     install(DIRECTORY images DESTINATION ${DFHACK_USERDOC_DESTINATION})
 endif()
 
@@ -182,11 +181,16 @@ IF(UNIX)
     if(APPLE)
         SET(CPACK_GENERATOR "ZIP")
     else()
-        SET(CPACK_GENERATOR "TGZ")
+        SET(CPACK_GENERATOR "TBZ2")
     endif()
 ELSEIF(WIN32)
     SET(CPACK_GENERATOR "ZIP")
 ENDIF()
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY 0)
-set(CPACK_PACKAGE_FILE_NAME "dfhack-${DFHACK_VERSION}-${CMAKE_SYSTEM_NAME}")
+IF(APPLE)
+    set(DFHACK_PACKAGE_PLATFORM_NAME OSX)
+ELSE()
+    set(DFHACK_PACKAGE_PLATFORM_NAME ${CMAKE_SYSTEM_NAME})
+ENDIF()
+set(CPACK_PACKAGE_FILE_NAME "dfhack-${DFHACK_VERSION}-${DFHACK_PACKAGE_PLATFORM_NAME}")
 INCLUDE(CPack)

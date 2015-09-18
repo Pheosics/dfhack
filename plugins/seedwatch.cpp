@@ -19,10 +19,13 @@
 using namespace std;
 using namespace DFHack;
 using namespace df::enums;
-using df::global::world;
+
+DFHACK_PLUGIN("seedwatch");
+DFHACK_PLUGIN_IS_ENABLED(running); // whether seedwatch is counting the seeds or not
+
+REQUIRE_GLOBAL(world);
 
 const int buffer = 20; // seed number buffer - 20 is reasonable
-DFHACK_PLUGIN_IS_ENABLED(running); // whether seedwatch is counting the seeds or not
 
 // abbreviations for the standard plants
 map<string, string> abbreviations;
@@ -116,8 +119,7 @@ command_result df_seedwatch(color_ostream &out, vector<string>& parameters)
     World::ReadGameMode(gm);// FIXME: check return value
 
     // if game mode isn't fortress mode
-    if(gm.g_mode != game_mode::DWARF || 
-        !(gm.g_type == game_type::DWARF_MAIN || gm.g_type == game_type::DWARF_RECLAIM))
+    if(gm.g_mode != game_mode::DWARF || !World::isFortressMode(gm.g_type))
     {
         // just print the help
         printHelp(out);
@@ -130,11 +132,15 @@ command_result df_seedwatch(color_ostream &out, vector<string>& parameters)
     {
     case 0:
         printHelp(out);
-        break;
+        return CR_WRONG_USAGE;
+
     case 1:
         par = parameters[0];
-        if(par == "help") printHelp(out);
-        else if(par == "?") printHelp(out);
+        if ((par == "help") || (par == "?"))
+        {
+            printHelp(out);
+            return CR_WRONG_USAGE;
+        }
         else if(par == "start")
         {
             running = true;
@@ -239,13 +245,12 @@ command_result df_seedwatch(color_ostream &out, vector<string>& parameters)
         break;
     default:
         printHelp(out);
+        return CR_WRONG_USAGE;
         break;
     }
 
     return CR_OK;
 }
-
-DFHACK_PLUGIN("seedwatch");
 
 DFhackCExport command_result plugin_init(color_ostream &out, vector<PluginCommand>& commands)
 {
@@ -304,8 +309,7 @@ DFhackCExport command_result plugin_onupdate(color_ostream &out)
         t_gamemodes gm;
         World::ReadGameMode(gm);// FIXME: check return value
         // if game mode isn't fortress mode
-        if(gm.g_mode != game_mode::DWARF || 
-            !(gm.g_type == game_type::DWARF_MAIN || gm.g_type == game_type::DWARF_RECLAIM))
+        if(gm.g_mode != game_mode::DWARF || !World::isFortressMode(gm.g_type))
         {
             // stop running.
             running = false;

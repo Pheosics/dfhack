@@ -16,11 +16,11 @@ How to get the code
 DFHack doesn't have any kind of system of code snapshots in place, so you will have to get code from the github repository using git.
 Having a 'git' package installed is the minimal requirement, but some sort of git gui or git integration for your favorite text editor/IDE will certainly help.
 
-The code resides here: https://github.com/peterix/dfhack
+The code resides here: https://github.com/DFHack/dfhack
 
 If you just want to compile DFHack or work on it by contributing patches, it's quite enough to clone from the read-only address::
-    
-    git clone git://github.com/peterix/dfhack.git
+
+    git clone git://github.com/DFHack/dfhack.git
     cd dfhack
     git submodule init
     git submodule update
@@ -33,17 +33,21 @@ DFHack is meant to be installed into an existing DF folder, so get one ready.
 
 For building, you need a 32-bit version of GCC. For example, to build DFHack on
 a 64-bit distribution like Arch, you'll need the multilib development tools and libraries.
+Alternatively, you might be able to use ``lxc`` to
+`create a virtual 32-bit environment <http://www.bay12forums.com/smf/index.php?topic=139553.msg5435310#msg5435310>`_.
 
 Before you can build anything, you'll also need ``cmake``. It is advisable to also get
 ``ccmake`` on distributions that split the cmake package into multiple parts.
 
-For the code generation parts, you need perl and the XML::LibXML and XML::LibXSLT perl packages.
-You should be able to find them in your distro repositories (on Arch linux 'perl-xml-libxml' and 'perl-xml-libxslt').
+You also need perl and the XML::LibXML and XML::LibXSLT perl packages (for the code generation parts).
+You should be able to find them in your distro repositories (on Arch linux 'perl-xml-libxml' and 'perl-xml-libxslt') or through ``cpan``.
+
+To build Stonesense, you'll also need OpenGL headers.
 
 Build
 =====
 Building is fairly straightforward. Enter the ``build`` folder and start the build like this::
-    
+
     cd build
     cmake .. -DCMAKE_BUILD_TYPE:string=Release -DCMAKE_INSTALL_PREFIX=/home/user/DF
     make install
@@ -52,7 +56,7 @@ Obviously, replace the install path with path to your DF. This will build the li
 along with the normal set of plugins and install them into your DF folder.
 
 Alternatively, you can use ccmake instead of cmake::
-    
+
     cd build
     ccmake ..
     make install
@@ -89,16 +93,25 @@ If you are building on 10.6, please read the subsection below titled "Snow Leopa
 1. Download and unpack a copy of the latest DF
 2. Install Xcode from Mac App Store
 3. Open Xcode, go to Preferences > Downloads, and install the Command Line Tools.
-4. Install MacPorts.
-5. Install dependencies from MacPorts:
+4. Install dependencies
 
-   * ``sudo port install gcc45 +universal cmake +universal git-core +universal``
+    Option 1: Using MacPorts:
 
-     This will take some time—maybe hours, depending on your machine.
+        * `Install MacPorts <http://www.macports.org/>`_
+        * Run ``sudo port install gcc45 +universal cmake +universal git-core +universal``
+          This will take some time—maybe hours, depending on your machine.
 
-   * At some point during this process, it may ask you to install a Java environment; let it do so.
+        At some point during this process, it may ask you to install a Java environment; let it do so.
 
-6. Install perl dependencies
+    Option 2: Using Homebrew:
+
+        * `Install Homebrew <http://brew.sh/>`_ and run:
+        * ``brew tap homebrew/versions``
+        * ``brew install git``
+        * ``brew install cmake``
+        * ``brew install gcc45 --enable-multilib``
+
+5. Install perl dependencies
 
     1. ``sudo cpan``
 
@@ -108,19 +121,29 @@ If you are building on 10.6, please read the subsection below titled "Snow Leopa
     2. ``install XML::LibXML``
     3. ``install XML::LibXSLT``
 
-7. Get the dfhack source::
+6. Get the dfhack source::
 
-    git clone https://github.com/danaris/dfhack.git
+    git clone git://github.com/DFHack/dfhack.git
     cd dfhack
     git submodule init
     git submodule update
+
+7. Set environment variables:
+
+  Macports::
+
+    export CC=/opt/local/bin/gcc-mp-4.5
+    export CXX=/opt/local/bin/g++-mp-4.5
+
+  Homebrew::
+
+    export CC=/usr/local/bin/gcc-4.5
+    export CXX=/usr/local/bin/g++-4.5
 
 8. Build dfhack::
 
     mkdir build-osx
     cd build-osx
-    export CC=/opt/local/bin/gcc-mp-4.5
-    export CXX=/opt/local/bin/g++-mp-4.5
     cmake .. -DCMAKE_BUILD_TYPE:string=Release -DCMAKE_INSTALL_PREFIX=/path/to/DF/directory
     make
     make install
@@ -130,12 +153,19 @@ Snow Leopard Changes
 ====================
 
 1. Add a step 6.2a (before Install XML::LibXSLT)::
-	In a separate Terminal window or tab, run:
-	``sudo ln -s /usr/include/libxml2/libxml /usr/include/libxml``
-	
+    In a separate Terminal window or tab, run:
+    ``sudo ln -s /usr/include/libxml2/libxml /usr/include/libxml``
+
 2. Add a step 7a (before building)::
-	In <dfhack directory>/library/LuaTypes.cpp, change line 467 to 
-		``int len = strlen((char*)ptr);``
+    In <dfhack directory>/library/LuaTypes.cpp, change line 467 to
+        ``int len = strlen((char*)ptr);``
+
+Yosemite Changes
+================
+
+If you have issues building on OS X Yosemite (or above), try definining the following environment variable:
+
+    export MACOSX_DEPLOYMENT_TARGET=10.9
 
 =======
 Windows
@@ -147,14 +177,14 @@ How to get the code
 DFHack doesn't have any kind of system of code snapshots in place, so you will have to get code from the github repository using git.
 You will need some sort of Windows port of git, or a GUI. Some examples:
 
- * http://code.google.com/p/msysgit/ - this is a command line version of git for windows. Most tutorials on git usage will apply.
+ * http://msysgit.github.io/ - this is a command line version of git for windows. Most tutorials on git usage will apply.
  * http://code.google.com/p/tortoisegit/ - this puts a pretty, graphical face on top of msysgit :)
 
-The code resides here: https://github.com/peterix/dfhack
+The code resides here: https://github.com/DFHack/dfhack
 
 If you just want to compile DFHack or work on it by contributing patches, it's quite enough to clone from the read-only address::
-    
-    git clone git://github.com/peterix/dfhack.git
+
+    git clone git://github.com/DFHack/dfhack.git
     cd dfhack
     git submodule init
     git submodule update
@@ -174,12 +204,9 @@ to your binary search PATH so the tool can be later run from anywhere.
 You'll need a copy of Microsoft Visual C++ 2010. The Express version is sufficient.
 Grab it from Microsoft's site.
 
-For the code generation parts, you'll need perl and XML::LibXML. You can install them like this:
+You'll also need the Visual Studio 2010 SP1 update.
 
-* download and install strawberry perl from http://strawberryperl.com/
-* reboot so that the system can pick up the new binary path
-* open a cmd.exe window and run "cpan XML::LibXML" (obviously without the quotes). This can take a while to complete.
-* Same with "cpan XML::LibXSLT".
+For the code generation parts, you'll need perl with XML::LibXML and XML::LibXSLT. Strawberry Perl works nicely for this: http://strawberryperl.com/
 
 If you already have a different version of perl (for example the one from cygwin), you can run into some trouble. Either remove the other perl install from PATH, or install libxml and libxslt for it instead. Strawberry perl works though and has all the required packages.
 
@@ -214,7 +241,7 @@ Build types
 variable: ``CMAKE_BUILD_TYPE``
 
 ::
-    
+
     cmake .. -DCMAKE_BUILD_TYPE:string=BUILD_TYPE
 
 Without specifying a build type or 'None', cmake uses the
@@ -266,48 +293,4 @@ Currently the supported set of requests is limited, because the developers don't
 
 Protocol client implementations exist for Java and C#.
 
-Contributing to DFHack
-======================
 
-Several things should be kept in mind when contributing to DFHack.
-
-------------
-Coding style
-------------
-DFhack uses ANSI formatting and four spaces as indentation. Line
-endings are UNIX. The files use UTF-8 encoding. Code not following this
-won't make me happy, because I'll have to fix it. There's a good chance
-I'll make *you* fix it ;)
-
--------------------------------
-How to get new code into DFHack
--------------------------------
-You can send patches or make a clone of the github repo and ask me on
-the IRC channel to pull your code in. I'll review it and see if there
-are any problems. I'll fix them if they are minor.
-
-Fixes are higher in priority. If you want to work on something, but
-don't know what, check out http://github.com/peterix/dfhack/issues --
-this is also a good place to dump new ideas and/or bugs that need
-fixing.
-
----------------
-Memory research
----------------
-If you want to do memory research, you'll need some tools and some knowledge.
-In general, you'll need a good memory viewer and optionally something
-to look at machine code without getting crazy :)
-
-Good windows tools include:
-
-* Cheat Engine
-* IDA Pro (the free version)
-
-Good linux tools:
-
-* angavrilov's df-structures gui (visit us on IRC for details).
-* edb (Evan's Debugger)
-* IDA Pro running under wine.
-* Some of the tools residing in the ``legacy`` dfhack branch.
-
-Using publicly known information and analyzing the game's data is preferred.

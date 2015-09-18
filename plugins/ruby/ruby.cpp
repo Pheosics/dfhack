@@ -175,7 +175,10 @@ DFhackCExport command_result plugin_eval_ruby( color_ostream &out, const char *c
 
     // if dlopen failed
     if (!r_thread)
+    {
+        out.printerr("Failed to load ruby library.\n");
         return CR_FAILURE;
+    }
 
     if (!strncmp(command, "nolock ", 7)) {
         // debug only!
@@ -293,6 +296,7 @@ typedef unsigned long ID;
 #define FIX2INT(i) (((long)i) >> 1)
 #define RUBY_METHOD_FUNC(func) ((VALUE(*)(...))func)
 
+void (*ruby_init_stack)(VALUE*);
 void (*ruby_sysinit)(int *, const char ***);
 void (*ruby_init)(void);
 void (*ruby_init_loadpath)(void);
@@ -323,7 +327,7 @@ static int df_loadruby(void)
 #if defined(WIN32)
         "./libruby.dll";
 #elif defined(__APPLE__)
-        "/System/Library/Frameworks/Ruby.framework/Versions/1.8/usr/lib/libruby.1.dylib";
+        "hack/libruby.dylib";
 #else
         "hack/libruby.so";
 #endif
@@ -337,6 +341,7 @@ static int df_loadruby(void)
     // ruby_sysinit is optional (ruby1.9 only)
     ruby_sysinit = (decltype(ruby_sysinit))LookupPlugin(libruby_handle, "ruby_sysinit");
 #define rbloadsym(s) if (!(s = (decltype(s))LookupPlugin(libruby_handle, #s))) return 0
+    rbloadsym(ruby_init_stack);
     rbloadsym(ruby_init);
     rbloadsym(ruby_init_loadpath);
     rbloadsym(ruby_script);
@@ -400,6 +405,10 @@ static void dump_rb_error(void)
 static void df_rubythread(void *p)
 {
     int state, running;
+
+    // may need to be run from df main thread?
+    VALUE foo;
+    ruby_init_stack(&foo);
 
     if (ruby_sysinit) {
         // ruby1.9 specific API
@@ -477,7 +486,7 @@ static VALUE rb_cDFHack;
 // df-dfhack version (eg "0.34.11-r2")
 static VALUE rb_dfversion(VALUE self)
 {
-    return rb_str_new(DFHACK_VERSION, strlen(DFHACK_VERSION));
+    return rb_str_new(get_dfhack_version(), strlen(get_dfhack_version()));
 }
 
 // enable/disable calls to DFHack.onupdate()
@@ -533,6 +542,18 @@ static VALUE rb_dfprint_str(VALUE self, VALUE s)
     if (r_console)
         r_console->print("%s", rb_string_value_ptr(&s));
     else
+        console_proxy->print("%s", rb_string_value_ptr(&s));
+    return Qnil;
+}
+
+static VALUE rb_dfprint_color(VALUE self, VALUE c, VALUE s)
+{
+    if (r_console) {
+        color_value old_col = r_console->color();
+        r_console->color(color_value(rb_num2ulong(c)));
+        r_console->print("%s", rb_string_value_ptr(&s));
+        r_console->color(old_col);
+    } else
         console_proxy->print("%s", rb_string_value_ptr(&s));
     return Qnil;
 }
@@ -778,9 +799,7 @@ static VALUE rb_dfmemory_stlstring_delete(VALUE self, VALUE addr)
 }
 static VALUE rb_dfmemory_stlstring_init(VALUE self, VALUE addr)
 {
-    // XXX THIS IS TERRIBLE
-    std::string *ptr = new std::string;
-    memcpy((void*)rb_num2ulong(addr), (void*)ptr, sizeof(*ptr));
+    new((void*)rb_num2ulong(addr)) std::string();
     return Qtrue;
 }
 static VALUE rb_dfmemory_read_stlstring(VALUE self, VALUE addr)
@@ -812,8 +831,7 @@ static VALUE rb_dfmemory_vec_delete(VALUE self, VALUE addr)
 }
 static VALUE rb_dfmemory_vec_init(VALUE self, VALUE addr)
 {
-    std::vector<uint8_t> *ptr = new std::vector<uint8_t>;
-    memcpy((void*)rb_num2ulong(addr), (void*)ptr, sizeof(*ptr));
+    new((void*)rb_num2ulong(addr)) std::vector<uint8_t>();
     return Qtrue;
 }
 // vector<uint8>
@@ -903,8 +921,7 @@ static VALUE rb_dfmemory_vecbool_delete(VALUE self, VALUE addr)
 }
 static VALUE rb_dfmemory_vecbool_init(VALUE self, VALUE addr)
 {
-    std::vector<bool> *ptr = new std::vector<bool>;
-    memcpy((void*)rb_num2ulong(addr), (void*)ptr, sizeof(*ptr));
+    new((void*)rb_num2ulong(addr)) std::vector<bool>();
     return Qtrue;
 }
 static VALUE rb_dfmemory_vecbool_length(VALUE self, VALUE addr)
@@ -1070,6 +1087,7 @@ static void ruby_bind_dfhack(void) {
     rb_define_singleton_method(rb_cDFHack, "get_vtable_ptr", RUBY_METHOD_FUNC(rb_dfget_vtable_ptr), 1);
     rb_define_singleton_method(rb_cDFHack, "dfhack_run", RUBY_METHOD_FUNC(rb_dfhack_run), 1);
     rb_define_singleton_method(rb_cDFHack, "print_str", RUBY_METHOD_FUNC(rb_dfprint_str), 1);
+    rb_define_singleton_method(rb_cDFHack, "print_color", RUBY_METHOD_FUNC(rb_dfprint_color), 2);
     rb_define_singleton_method(rb_cDFHack, "print_err", RUBY_METHOD_FUNC(rb_dfprint_err), 1);
     rb_define_singleton_method(rb_cDFHack, "malloc", RUBY_METHOD_FUNC(rb_dfmalloc), 1);
     rb_define_singleton_method(rb_cDFHack, "free", RUBY_METHOD_FUNC(rb_dffree), 1);

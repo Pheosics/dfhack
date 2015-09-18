@@ -25,9 +25,10 @@ implemented by Lua files located in hack/lua/...
 DF data structure wrapper
 =========================
 
-DF structures described by the xml files in library/xml are exported
-to lua code as a tree of objects and functions under the ``df`` global,
-which broadly maps to the ``df`` namespace in C++.
+Data structures of the game are defined in XML files located in library/xml
+(and online at http://github.com/DFHack/df-structures), and automatically exported
+to lua code as a tree of objects and functions under the ``df`` global, which
+also broadly maps to the ``df`` namespace in the headers generated for C++.
 
 **WARNING**: The wrapper provides almost raw access to the memory
 of the game, so mistakes in manipulating objects are as likely to
@@ -812,6 +813,14 @@ can be omitted.
 
   Convert a language_name or only the last name part to string.
 
+* ``dfhack.df2utf(string)``
+
+  Convert a string from DF's CP437 encoding to UTF-8.
+
+* ``dfhack.utf2df(string)``
+
+  Convert a string from UTF-8 to DF's CP437 encoding.
+
 Gui module
 ----------
 
@@ -854,6 +863,32 @@ Gui module
 
   Returns the building selected via *'q'*, *'t'*, *'k'* or *'i'*.
 
+* ``dfhack.gui.writeToGamelog(text)``
+
+  Writes a string to gamelog.txt without doing an announcement.
+
+* ``dfhack.gui.makeAnnouncement(type,flags,pos,text,color[,is_bright])``
+
+  Adds an announcement with given announcement_type, text, color, and brightness.
+  The is_bright boolean actually seems to invert the brightness.
+
+  The announcement is written to gamelog.txt. The announcement_flags
+  argument provides a custom set of announcements.txt options,
+  which specify if the message should actually be displayed in the
+  announcement list, and whether to recenter or show a popup.
+
+  Returns the index of the new announcement in ``df.global.world.status.reports``, or -1.
+
+* ``dfhack.gui.addCombatReport(unit,slot,report_index)``
+
+  Adds the report with the given index (returned by makeAnnouncement)
+  to the specified group of the given unit. Returns *true* on success.
+
+* ``dfhack.gui.addCombatReportAuto(unit,flags,report_index)``
+
+  Adds the report with the given index to the appropriate group(s)
+  of the given unit, as requested by the flags.
+
 * ``dfhack.gui.showAnnouncement(text,color[,is_bright])``
 
   Adds a regular announcement with given text, color, and brightness.
@@ -867,10 +902,10 @@ Gui module
 
   Pops up a titan-style modal announcement window.
 
-* ``dfhack.gui.showAutoAnnouncement(type,pos,text,color[,is_bright])``
+* ``dfhack.gui.showAutoAnnouncement(type,pos,text,color[,is_bright,unit1,unit2])``
 
-  Uses the type to look up options from announcements.txt, and calls the
-  above operations accordingly. If enabled, pauses and zooms to position.
+  Uses the type to look up options from announcements.txt, and calls the above
+  operations accordingly. The units are used to call ``addCombatReportAuto``.
 
 
 Job module
@@ -904,6 +939,16 @@ Job module
 
   Returns the unit performing the job.
 
+* ``dfhack.job.setJobCooldown(building,worker,timeout)``
+
+  Prevent the worker from taking jobs at the specified workshop for the specified time.
+  This doesn't decrease the timeout in any circumstances.
+
+* ``dfhack.job.removeWorker(job,timeout)``
+
+  Removes the worker from the specified workshop job, and sets the cooldown.
+  Returns *true* on success.
+
 * ``dfhack.job.checkBuildingsNow()``
 
   Instructs the game to check buildings for jobs next frame and assign workers.
@@ -920,6 +965,12 @@ Job module
 
   Compares important fields in the job item structures.
 
+* ``dfhack.job.linkIntoWorld(job,new_id)``
+
+  Adds job into ``df.global.job_list``, and if new_id
+  is true, then also sets it's id and increases
+  ``df.global.job_next_id``
+
 * ``dfhack.job.listNewlyCreated(first_id)``
 
   Returns the current value of ``df.global.job_next_id``, and
@@ -934,6 +985,10 @@ Job module
 * ``dfhack.job.isSuitableMaterial(job_item, mat_type, mat_index)``
 
   Likewise, if replacing material.
+
+* ``dfhack.job.getName(job)``
+
+  Returns the job's description, as seen in the Units and Jobs screens.
 
 Units module
 ------------
@@ -1032,6 +1087,11 @@ Units module
 * ``dfhack.units.computeMovementSpeed(unit)``
 
   Computes number of frames * 100 it takes the unit to move in its current state of mind and body.
+
+* ``dfhack.units.computeSlowdownFactor(unit)``
+
+  Meandering and floundering in liquid introduces additional slowdown. It is
+  random, but the function computes and returns the expected mean factor as a float.
 
 * ``dfhack.units.getNoblePositions(unit)``
 
@@ -1137,6 +1197,14 @@ Items module
 * ``dfhack.items.getSubtypeDef(item_type, subtype)``
 
   Returns the raw definition for the given item type and subtype, or *nil* if invalid.
+
+* ``dfhack.items.getItemBaseValue(item_type, subtype, material, mat_index)``
+
+  Calculates the base value for an item of the specified type and material.
+
+* ``dfhack.items.getValue(item)``
+
+  Calculates the Basic Value of an item, as seen in the View Item screen.
 
 
 Maps module
@@ -1325,6 +1393,11 @@ Buildings module
 
   Checks if a bridge constructed at specified position would have
   support from terrain, and thus won't collapse if retracted.
+
+* ``dfhack.buildings.getStockpileContents(stockpile)``
+
+  Returns a list of items stored on the given stockpile.
+  Ignores empty bins, barrels, and wheelbarrows assigned as storage and transport for that stockpile.
 
 Low-level building creation functions;
 
@@ -1529,6 +1602,17 @@ Basic painting functions:
   Returns the string that should be used to represent the given
   logical keybinding on the screen in texts like "press Key to ...".
 
+* ``dfhack.screen.keyToChar(key)``
+
+  Returns the integer character code of the string input
+  character represented by the given logical keybinding,
+  or *nil* if not a string input key.
+
+* ``dfhack.screen.charToKey(charcode)``
+
+  Returns the keybinding representing the given string input
+  character, or *nil* if impossible.
+
 The "pen" argument used by functions above may be represented by
 a table with the following possible fields:
 
@@ -1681,6 +1765,66 @@ Supported callbacks and fields are:
   ``dfhack.gui.getSelected...`` function.
 
 
+Filesystem module
+-----------------
+
+Most of these functions return ``true`` on success and ``false`` on failure,
+unless otherwise noted.
+
+* ``dfhack.filesystem.exists(path)``
+
+  Returns ``true`` if ``path`` exists.
+
+* ``dfhack.filesystem.isfile(path)``
+
+  Returns ``true`` if ``path`` exists and is a file.
+
+* ``dfhack.filesystem.isdir(path)``
+
+  Returns ``true`` if ``path`` exists and is a directory.
+
+* ``dfhack.filesystem.getcwd()``
+
+  Returns the current working directory. To retrieve the DF path, use ``dfhack.getDFPath()`` instead.
+
+* ``dfhack.filesystem.chdir(path)``
+
+  Changes the current directory to ``path``. Use with caution.
+
+* ``dfhack.filesystem.mkdir(path)``
+
+  Creates a new directory. Returns ``false`` if unsuccessful, including if ``path`` already exists.
+
+* ``dfhack.filesystem.rmdir(path)``
+
+  Removes a directory. Only works if the directory is already empty.
+
+* ``dfhack.filesystem.mtime(path)``
+
+  Returns the modification time (in seconds) of the file or directory specified by ``path``,
+  or -1 if ``path`` does not exist. This depends on the system clock and should only be used locally.
+
+* ``dfhack.filesystem.atime(path)``
+* ``dfhack.filesystem.ctime(path)``
+
+  Return values vary across operating systems - return the ``st_atime`` and ``st_ctime``
+  fields of a C++ stat struct, respectively.
+
+* ``dfhack.filesystem.listdir(path)``
+
+  Lists files/directories in a directory.  Returns ``{}`` if ``path`` does not exist.
+
+* ``dfhack.filesystem.listdir_recursive(path [, depth = 10])``
+
+  Lists all files/directories in a directory and its subdirectories. All directories
+  are listed before their contents. Returns a table with subtables of the format::
+
+    {path: 'path to file', isdir: true|false}
+
+  Note that ``listdir()`` returns only the base name of each directory entry, while
+  ``listdir_recursive()`` returns the initial path and all components following it
+  for each entry.
+
 Internal API
 ------------
 
@@ -1760,6 +1904,14 @@ and are only documented here for completeness:
   The oldval, newval or delta arguments may be used to specify additional constraints.
   Returns: *found_index*, or *nil* if end reached.
 
+* ``dfhack.internal.getDir(path)``
+
+  Lists files/directories in a directory.
+  Returns: *file_names* or empty table if not found. Identical to ``dfhack.filesystem.listdir(path)``.
+
+* ``dfhack.internal.strerror(errno)``
+
+  Wraps strerror() - returns a string describing a platform-specific error code
 
 Core interpreter context
 ========================
@@ -1991,6 +2143,10 @@ utils
   Separating the actual reordering of the sequence in this
   way enables applying the same permutation to multiple arrays.
   This function is used by the sort plugin.
+
+* ``for link,item in utils.listpairs(list)``
+
+  Iterates a df-list structure, for example ``df.global.world.job_list``.
 
 * ``utils.assign(tgt, src)``
 
@@ -3089,7 +3245,23 @@ These events are straight from EventManager module. Each of them first needs to 
 
 9. ``onInventoryChange(unit_id,item_id,old_equip,new_equip)``
 
-   Gets called when someone picks up an item, puts one down, or changes the way they are holding it. If an item is picked up, old_equip will be null. If an item is dropped, new_equip will be null. If an item is re-equipped in a new way, then neither will be null. You absolutely must NOT alter either old_equip or new_equip or you might break other plugins. 
+   Gets called when someone picks up an item, puts one down, or changes the way they are holding it. If an item is picked up, old_equip will be null. If an item is dropped, new_equip will be null. If an item is re-equipped in a new way, then neither will be null. You absolutely must NOT alter either old_equip or new_equip or you might break other plugins.
+
+10. ``onReport(reportId)``
+
+    Gets called when a report happens. This happens more often than you probably think, even if it doesn't show up in the announcements.
+
+11. ``onUnitAttack(attackerId, defenderId, woundId)``
+
+    Called when a unit wounds another with a weapon. Is NOT called if blocked, dodged, deflected, or parried.
+
+12. ``onUnload()``
+
+    A convenience event in case you don't want to register for every onStateChange event.
+
+13. ``onInteraction(attackVerb, defendVerb, attackerId, defenderId, attackReportId, defendReportId)``
+
+    Called when a unit uses an interaction on another.
 
 Functions
 ---------
@@ -3110,6 +3282,11 @@ Functions
 
    Enable event checking for EventManager events. For event types use ``eventType`` table. Note that different types of events require different frequencies to be effective. The frequency is how many ticks EventManager will wait before checking if that type of event has happened. If multiple scripts or plugins use the same event type, the smallest frequency is the one that is used, so you might get events triggered more often than the frequency you use here.
 
+5. ``registerSidebar(shop_name,callback)``
+
+   Enable callback when sidebar for ``shop_name`` is drawn. Usefull for custom workshop views e.g. using gui.dwarfmode lib. Also accepts a ``class`` instead of function
+   as callback. Best used with ``gui.dwarfmode`` class ``WorkshopOverlay``.
+
 Examples
 --------
 Spawn dragon breath on each item attempt to contaminate wound::
@@ -3123,20 +3300,20 @@ Reaction complete example::
 
   b=require "plugins.eventful"
 
-  b.onReactionComplete.one=function(reaction,unit,in_items,in_reag,out_items,call_native)
+  b.registerReaction("LUA_HOOK_LAY_BOMB",function(reaction,unit,in_items,in_reag,out_items,call_native)
     local pos=copyall(unit.pos)
     -- spawn dragonbreath after 100 ticks
     dfhack.timeout(100,"ticks",function() dfhack.maps.spawnFlow(pos,6,0,0,50000) end)
     --do not call real item creation code
     call_native.value=false
-  end
+  end)
 
 Grenade example::
 
   b=require "plugins.eventful"
   b.onProjItemCheckImpact.one=function(projectile)
     -- you can check if projectile.item e.g. has correct material
-    dfhack.maps.spawnFlow(projectile.cur_pos,6,0,0,50000) 
+    dfhack.maps.spawnFlow(projectile.cur_pos,6,0,0,50000)
   end
 
 Integrated tannery::
@@ -3144,14 +3321,62 @@ Integrated tannery::
   b=require "plugins.eventful"
   b.addReactionToShop("TAN_A_HIDE","LEATHERWORKS")
 
+Building-hacks
+==============
+
+This plugin overwrites some methods in workshop df class so that mechanical workshops are possible. Although
+plugin export a function it's recommended to use lua decorated function.
+
+Functions
+---------
+
+``registerBuilding(table)`` where table must contain name, as a workshop raw name, the rest are optional:
+ 1. name -- custom workshop id e.g. ``SOAPMAKER``
+ 2. fix_impassible -- if true make impassible tiles impassible to liquids too
+ 3. consume -- how much machine power is needed to work. Disables reactions if not supplied enough and needs_power=1
+ 4. produce -- how much machine power is produced.
+ 5. needs_power -- if produced in network < consumed stop working, default true
+ 6. gears -- a table or ``{x=?,y=?}`` of connection points for machines
+ 7. action -- a table of number (how much ticks to skip) and a function which gets called on shop update
+ 8. animate -- a table of frames which can be a table of:
+
+    a. tables of 4 numbers ``{tile,fore,back,bright}`` OR
+    b. empty table (tile not modified) OR
+    c. ``{x=<number> y=<number> + 4 numbers like in first case}``, this generates full frame useful for animations that change little (1-2 tiles)
+ 9. canBeRoomSubset -- a flag if this building can be counted in room. 1 means it can, 0 means it can't and -1 default building behaviour
+
+Animate table also might contain:
+ 1. frameLenght -- how many ticks does one frame take OR
+ 2. isMechanical -- a bool that says to try to match to mechanical system (i.e. how gears are turning)
+
+``getPower(building)`` returns two number - produced and consumed power if building can be modified and returns nothing otherwise
+
+``setPower(building,produced,consumed)`` sets current productiona and consumption for a building.
+
+Examples
+--------
+
+Simple mechanical workshop::
+
+  require('plugins.building-hacks').registerBuilding{name="BONE_GRINDER",
+    consume=15,
+    gears={x=0,y=0}, --connection point
+    animate={
+      isMechanical=true, --animate the same connection point as vanilla gear
+      frames={
+      {{x=0,y=0,42,7,0,0}}, --first frame, 1 changed tile
+      {{x=0,y=0,15,7,0,0}} -- second frame, same
+      }
+    }
+
 =======
 Scripts
 =======
 
 Any files with the .lua extension placed into hack/scripts/*
 are automatically used by the DFHack core as commands. The
-matching command name consists of the name of the file sans
-the extension.
+matching command name consists of the name of the file without
+the extension. First DFHack searches for the script in the save folder/raw/scripts folder. If it is not found there, it searches in the DF/raw/scripts folder. If it is not there, it searches in DF/hack/scripts. If it is not there, it gives up.
 
 If the first line of the script is a one-line comment, it is
 used by the built-in ``ls`` and ``help`` commands.
@@ -3162,9 +3387,8 @@ for obscure developer-oriented scripts and scripts used by tools.
 When calling such scripts, always use '/' as the separator for
 directories, e.g. ``devel/lua-example``.
 
-Scripts are re-read from disk every time they are used
-(this may be changed later to check the file change time); however
-the global variable values persist in memory between calls.
+Scripts are re-read from disk if they have changed since the last time they were read.
+Global variable values persist in memory between calls, unless the file has changed.
 Every script gets its own separate environment for global
 variables.
 
@@ -3183,12 +3407,26 @@ from other scripts) in any context, via the same function the core uses:
 
 Note that this function lets errors propagate to the caller.
 
+* ``dfhack.script_environment(name)``
+
+  Run an Lua script and return its environment.
+  This command allows you to use scripts like modules for increased portability.
+  It is highly recommended that if you are a modder you put your custom modules in ``raw/scripts`` and use ``script_environment`` instead of ``require`` so that saves with your mod installed will be self-contained and can be transferred to people who do have DFHack but do not have your mod installed.
+  You can say ``dfhack.script_environment('add-thought').addEmotionToUnit([arguments go here])`` and it will have the desired effect.
+  It will call the script in question with the global ``moduleMode`` set to ``true`` so that the script can return early.
+  This is useful because if the script is called from the console it should deal with its console arguments and if it is called by ``script_environment`` it should only create its global functions and return.
+  You can also access global variables with, for example ``print(dfhack.script_environment('add-thought').validArgs)``
+  The function ``script_environment`` is fast enough that it is recommended that you not store its result in a nonlocal variable, because your script might need to load a different version of that script if the save is unloaded and a save with a different mod that overrides the same script with a slightly different functionality is loaded.
+  This will not be an issue in most cases.
+  This function also permits circular dependencies of scripts.
+
 Save init script
 ================
 
 If a save directory contains a file called ``raw/init.lua``, it is
-automatically loaded and executed every time the save is loaded. It
-can also define the following functions to be called by dfhack:
+automatically loaded and executed every time the save is loaded.
+The same applies to any files called ``raw/init.d/*.lua``. Every
+such script can define the following functions to be called by dfhack:
 
 * ``function onStateChange(op) ... end``
 
@@ -3200,6 +3438,7 @@ can also define the following functions to be called by dfhack:
 * ``function onUnload() ... end``
 
   Called when the save containing the script is unloaded. This function
-  should clean up any global hooks installed by the script.
+  should clean up any global hooks installed by the script. Note that
+  when this is called, the world is already completely unloaded.
 
 Within the init script, the path to the save directory is available as ``SAVE_PATH``.

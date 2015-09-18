@@ -22,69 +22,72 @@ must not be misrepresented as being the original software.
 distribution.
 */
 
-
+#include "Core.h"
+#include "Error.h"
 #include "Internal.h"
+#include "MemAccess.h"
+#include "MiscUtils.h"
+#include "Types.h"
+#include "VersionInfo.h"
 
-#include <string>
-#include <sstream>
-#include <vector>
 #include <cstdio>
 #include <map>
+#include <sstream>
+#include <string>
+#include <vector>
 #include <set>
 using namespace std;
 
-#include "Types.h"
-#include "VersionInfo.h"
-#include "MemAccess.h"
+#include "ModuleFactory.h"
+#include "modules/MapCache.h"
 #include "modules/Materials.h"
 #include "modules/Items.h"
 #include "modules/Units.h"
-#include "modules/MapCache.h"
-#include "ModuleFactory.h"
-#include "Core.h"
-#include "Error.h"
-#include "MiscUtils.h"
 
-#include "df/ui.h"
-#include "df/world.h"
-#include "df/item.h"
+#include "df/body_part_raw.h"
+#include "df/body_part_template_flags.h"
 #include "df/building.h"
 #include "df/building_actual.h"
-#include "df/tool_uses.h"
-#include "df/itemdef_weaponst.h"
-#include "df/itemdef_trapcompst.h"
-#include "df/itemdef_toyst.h"
-#include "df/itemdef_toolst.h"
-#include "df/itemdef_instrumentst.h"
-#include "df/itemdef_armorst.h"
-#include "df/itemdef_ammost.h"
-#include "df/itemdef_siegeammost.h"
-#include "df/itemdef_glovesst.h"
-#include "df/itemdef_shoesst.h"
-#include "df/itemdef_shieldst.h"
-#include "df/itemdef_helmst.h"
-#include "df/itemdef_pantsst.h"
-#include "df/itemdef_foodst.h"
-#include "df/trapcomp_flags.h"
-#include "df/job_item.h"
+#include "df/caste_raw.h"
+#include "df/creature_raw.h"
 #include "df/general_ref.h"
-#include "df/general_ref_unit_itemownerst.h"
-#include "df/general_ref_contains_itemst.h"
-#include "df/general_ref_contained_in_itemst.h"
 #include "df/general_ref_building_holderst.h"
+#include "df/general_ref_contained_in_itemst.h"
+#include "df/general_ref_contains_itemst.h"
 #include "df/general_ref_projectile.h"
-#include "df/viewscreen_itemst.h"
-#include "df/vermin.h"
+#include "df/general_ref_unit_itemownerst.h"
+#include "df/general_ref_unit_holderst.h"
+#include "df/historical_entity.h"
+#include "df/item.h"
+#include "df/item_type.h"
+#include "df/itemdef_ammost.h"
+#include "df/itemdef_armorst.h"
+#include "df/itemdef_foodst.h"
+#include "df/itemdef_glovesst.h"
+#include "df/itemdef_helmst.h"
+#include "df/itemdef_instrumentst.h"
+#include "df/itemdef_pantsst.h"
+#include "df/itemdef_shieldst.h"
+#include "df/itemdef_shoesst.h"
+#include "df/itemdef_siegeammost.h"
+#include "df/itemdef_toolst.h"
+#include "df/itemdef_toyst.h"
+#include "df/itemdef_trapcompst.h"
+#include "df/itemdef_weaponst.h"
+#include "df/job_item.h"
+#include "df/map_block.h"
 #include "df/proj_itemst.h"
 #include "df/proj_list_link.h"
-
-#include "df/unit_inventory_item.h"
-#include "df/body_part_raw.h"
+#include "df/reaction_product_itemst.h"
+#include "df/tool_uses.h"
+#include "df/trapcomp_flags.h"
+#include "df/ui.h"
 #include "df/unit.h"
-#include "df/creature_raw.h"
-#include "df/caste_raw.h"
-#include "df/body_part_template_flags.h"
-#include "df/general_ref_unit_holderst.h"
+#include "df/unit_inventory_item.h"
+#include "df/vermin.h"
+#include "df/viewscreen_itemst.h"
+#include "df/world.h"
+#include "df/world_site.h"
 
 using namespace DFHack;
 using namespace df::enums;
@@ -234,6 +237,8 @@ ITEMDEF_VECTORS
 #undef ITEM
 
     default:
+        if (items[1] == "NONE")
+            return true;
         break;
     }
 
@@ -534,7 +539,7 @@ bool Items::setOwner(df::item *item, df::unit *unit)
     {
         df::general_ref *ref = item->general_refs[i];
 
-        if (!strict_virtual_cast<df::general_ref_unit_itemownerst>(ref))
+        if (ref->getType() != general_ref_type::UNIT_ITEMOWNER)
             continue;
 
         if (auto cur = ref->getUnit())
@@ -705,7 +710,7 @@ static void resetUnitInvFlags(df::unit *unit, df::unit_inventory_item *inv_item)
     }
     else if (inv_item->mode == df::unit_inventory_item::StuckIn)
     {
-        unit->flags3.bits.unk2 = false;
+        unit->flags3.bits.stuck_weapon_computed = false;
     }
 }
 
@@ -997,16 +1002,22 @@ df::proj_itemst *Items::makeProjectile(MapExtras::MapCache &mc, df::item *item)
     if (!ref)
         return NULL;
 
+    auto proj = df::allocate<df::proj_itemst>();
+    if (!proj) {
+        delete ref;
+        return NULL;
+    }
+
     if (!detachItem(mc, item))
     {
         delete ref;
+        delete proj;
         return NULL;
     }
 
     item->pos = pos;
     item->flags.bits.in_job = true;
 
-    auto proj = new df::proj_itemst();
     proj->link = new df::proj_list_link();
     proj->link->item = proj;
     proj->id = (*proj_next_id)++;
@@ -1022,3 +1033,352 @@ df::proj_itemst *Items::makeProjectile(MapExtras::MapCache &mc, df::item *item)
 
     return proj;
 }
+
+int Items::getItemBaseValue(int16_t item_type, int16_t item_subtype, int16_t mat_type, int32_t mat_subtype)
+{
+    int value = 0;
+    switch (item_type)
+    {
+    case item_type::BAR:
+    case item_type::SMALLGEM:
+    case item_type::BLOCKS:
+    case item_type::SKIN_TANNED:
+        value = 5;
+        break;
+
+    case item_type::ROUGH:
+    case item_type::BOULDER:
+    case item_type::WOOD:
+        value = 3;
+        break;
+
+    case item_type::DOOR:
+    case item_type::FLOODGATE:
+    case item_type::BED:
+    case item_type::CHAIR:
+    case item_type::CHAIN:
+    case item_type::FLASK:
+    case item_type::GOBLET:
+    case item_type::INSTRUMENT:
+    case item_type::TOY:
+    case item_type::CAGE:
+    case item_type::BARREL:
+    case item_type::BUCKET:
+    case item_type::ANIMALTRAP:
+    case item_type::TABLE:
+    case item_type::COFFIN:
+    case item_type::BOX:
+    case item_type::BIN:
+    case item_type::ARMORSTAND:
+    case item_type::WEAPONRACK:
+    case item_type::CABINET:
+    case item_type::FIGURINE:
+    case item_type::AMULET:
+    case item_type::SCEPTER:
+    case item_type::CROWN:
+    case item_type::RING:
+    case item_type::EARRING:
+    case item_type::BRACELET:
+    case item_type::GEM:
+    case item_type::ANVIL:
+    case item_type::TOTEM:
+    case item_type::BACKPACK:
+    case item_type::QUIVER:
+    case item_type::BALLISTAARROWHEAD:
+    case item_type::PIPE_SECTION:
+    case item_type::HATCH_COVER:
+    case item_type::GRATE:
+    case item_type::QUERN:
+    case item_type::MILLSTONE:
+    case item_type::SPLINT:
+    case item_type::CRUTCH:
+    case item_type::SLAB:
+    case item_type::BOOK:
+        value = 10;
+        break;
+
+    case item_type::WINDOW:
+    case item_type::STATUE:
+        value = 25;
+        break;
+
+    case item_type::CORPSE:
+    case item_type::CORPSEPIECE:
+    case item_type::REMAINS:
+        return 0;
+
+    case item_type::WEAPON:
+        if (size_t(item_subtype) < world->raws.itemdefs.weapons.size())
+            value = world->raws.itemdefs.weapons[item_subtype]->value;
+        else
+            value = 10;
+        break;
+
+    case item_type::ARMOR:
+        if (size_t(item_subtype) < world->raws.itemdefs.armor.size())
+            value = world->raws.itemdefs.armor[item_subtype]->value;
+        else
+            value = 10;
+        break;
+
+    case item_type::SHOES:
+        if (size_t(item_subtype) < world->raws.itemdefs.shoes.size())
+            value = world->raws.itemdefs.shoes[item_subtype]->value;
+        else
+            value = 5;
+        break;
+
+    case item_type::SHIELD:
+        if (size_t(item_subtype) < world->raws.itemdefs.shields.size())
+            value = world->raws.itemdefs.shields[item_subtype]->value;
+        else
+            value = 10;
+        break;
+
+    case item_type::HELM:
+        if (size_t(item_subtype) < world->raws.itemdefs.helms.size())
+            value = world->raws.itemdefs.helms[item_subtype]->value;
+        else
+            value = 10;
+        break;
+
+    case item_type::GLOVES:
+        if (size_t(item_subtype) < world->raws.itemdefs.gloves.size())
+            value = world->raws.itemdefs.gloves[item_subtype]->value;
+        else
+            value = 5;
+        break;
+
+    case item_type::AMMO:
+        if (size_t(item_subtype) < world->raws.itemdefs.ammo.size())
+            value = world->raws.itemdefs.ammo[item_subtype]->value;
+        else
+            value = 1;
+        break;
+
+    case item_type::MEAT:
+    case item_type::PLANT:
+    case item_type::PLANT_GROWTH:
+    case item_type::CHEESE:
+        value = 2;
+        break;
+
+    case item_type::FISH:
+    case item_type::FISH_RAW:
+    case item_type::EGG:
+        value = 2;
+        if (size_t(mat_type) < world->raws.creatures.all.size())
+        {
+            auto creature = world->raws.creatures.all[mat_type];
+            if (size_t(mat_subtype) < creature->caste.size())
+            {
+                auto caste = creature->caste[mat_subtype];
+                mat_type = caste->misc.bone_mat;
+                mat_subtype = caste->misc.bone_matidx;
+            }
+        }
+        break;
+
+    case item_type::VERMIN:
+        value = 0;
+        if (size_t(mat_type) < world->raws.creatures.all.size())
+        {
+            auto creature = world->raws.creatures.all[mat_type];
+            if (size_t(mat_subtype) < creature->caste.size())
+                value = creature->caste[mat_subtype]->misc.petvalue;
+        }
+        value /= 2;
+        if (!value)
+                return 1;
+        return value;
+
+    case item_type::PET:
+        if (size_t(mat_type) < world->raws.creatures.all.size())
+        {
+            auto creature = world->raws.creatures.all[mat_type];
+            if (size_t(mat_subtype) < creature->caste.size())
+                return creature->caste[mat_subtype]->misc.petvalue;
+        }
+        return 0;
+
+    case item_type::SEEDS:
+    case item_type::DRINK:
+    case item_type::POWDER_MISC:
+    case item_type::LIQUID_MISC:
+    case item_type::COIN:
+    case item_type::GLOB:
+    case item_type::ORTHOPEDIC_CAST:
+        value = 1;
+        break;
+
+    case item_type::THREAD:
+        value = 6;
+        break;
+
+    case item_type::CLOTH:
+        value = 7;
+        break;
+
+    case item_type::PANTS:
+        if (size_t(item_subtype) < world->raws.itemdefs.pants.size())
+            value = world->raws.itemdefs.pants[item_subtype]->value;
+        else
+            value = 10;
+        break;
+
+    case item_type::CATAPULTPARTS:
+    case item_type::BALLISTAPARTS:
+    case item_type::TRAPPARTS:
+        value = 30;
+        break;
+
+    case item_type::SIEGEAMMO:
+    case item_type::TRACTION_BENCH:
+        value = 20;
+        break;
+
+    case item_type::TRAPCOMP:
+        if (size_t(item_subtype) < world->raws.itemdefs.trapcomps.size())
+            value = world->raws.itemdefs.trapcomps[item_subtype]->value;
+        else
+            value = 10;
+        break;
+
+    case item_type::FOOD:
+        return 10;
+
+//  case item_type::ROCK:
+    default:
+        return 0;
+
+    case item_type::TOOL:
+        if (size_t(item_subtype) < world->raws.itemdefs.tools.size())
+            value = world->raws.itemdefs.tools[item_subtype]->value;
+        else
+            value = 10;
+        break;
+    }
+
+    MaterialInfo mat;
+    if (mat.decode(mat_type, mat_subtype))
+        value *= mat.material->material_value;
+    return value;
+}
+
+int Items::getValue(df::item *item)
+{
+    CHECK_NULL_POINTER(item);
+
+    int16_t item_type = item->getType();
+    int16_t item_subtype = item->getSubtype();
+    int16_t mat_type = item->getMaterial();
+    int32_t mat_subtype = item->getMaterialIndex();
+
+    // Get base value for item type, subtype, and material
+    int value = getItemBaseValue(item_type, item_subtype, mat_type, mat_subtype);
+
+    // Ignore entity value modifications
+
+    // Improve value based on quality
+    int quality = item->getQuality();
+    value *= (quality + 1);
+    if (quality == 5)
+        value *= 2;
+
+    // Add improvement values
+    int impValue = item->getThreadDyeValue(NULL) + item->getImprovementsValue(NULL);
+    if (item_type == item_type::AMMO) // Ammo improvements are worth less
+        impValue /= 30;
+    value += impValue;
+
+    // Degrade value due to wear
+    switch (item->getWear())
+    {
+    case 1:
+        value = value * 3 / 4;
+        break;
+    case 2:
+        value = value / 2;
+        break;
+    case 3:
+        value = value / 4;
+        break;
+    }
+
+    // Ignore value bonuses from magic, since that never actually happens
+
+    // Artifacts have 10x value
+    if (item->flags.bits.artifact_mood)
+        value *= 10;
+
+    // Boost value from stack size
+    value *= item->getStackSize();
+    // ...but not for coins
+    if (item_type == item_type::COIN)
+    {
+        value /= 500;
+        if (!value)
+            value = 1;
+    }
+
+    // Handle vermin swarms
+    if (item_type == item_type::VERMIN || item_type == item_type::PET)
+    {
+        int divisor = 1;
+        auto creature = vector_get(world->raws.creatures.all, mat_type);
+        if (creature && size_t(mat_subtype) < creature->caste.size())
+            divisor = creature->caste[mat_subtype]->misc.petvalue_divisor;
+        if (divisor > 1)
+            value /= divisor;
+    }
+    return value;
+}
+
+int32_t Items::createItem(df::item_type item_type, int16_t item_subtype, int16_t mat_type, int32_t mat_index, df::unit* unit) {
+    //based on Quietust's plugins/createitem.cpp
+    df::map_block* block = Maps::getTileBlock(unit->pos.x, unit->pos.y, unit->pos.z);
+    CHECK_NULL_POINTER(block);
+    df::reaction_product_itemst* prod = df::allocate<df::reaction_product_itemst>();
+    prod->item_type = item_type;
+    prod->item_subtype = item_subtype;
+    prod->mat_type = mat_type;
+    prod->mat_index = mat_index;
+    prod->probability = 100;
+    prod->count = 1;
+    switch(item_type) {
+    case df::item_type::BAR:
+    case df::item_type::POWDER_MISC:
+    case df::item_type::LIQUID_MISC:
+    case df::item_type::DRINK:
+        prod->product_dimension = 150;
+        break;
+    case df::item_type::THREAD:
+        prod->product_dimension = 15000;
+        break;
+    case df::item_type::CLOTH:
+        prod->product_dimension = 10000;
+        break;
+    default:
+        prod->product_dimension = 1;
+        break;
+    }
+
+    //makeItem
+    vector<df::item*> out_items;
+    vector<df::reaction_reagent*> in_reag;
+    vector<df::item*> in_items;
+
+    df::enums::game_type::game_type type = *df::global::gametype;
+    prod->produce(unit, &out_items, &in_reag, &in_items, 1, job_skill::NONE,
+            df::historical_entity::find(unit->civ_id),
+            ((type == df::enums::game_type::DWARF_MAIN) || (type == df::enums::game_type::DWARF_RECLAIM)) ? df::world_site::find(df::global::ui->site_id) : NULL);
+    if ( out_items.size() != 1 )
+        return -1;
+
+    for (size_t a = 0; a < out_items.size(); a++ ) {
+        out_items[a]->moveToGround(unit->pos.x, unit->pos.y, unit->pos.z);
+    }
+
+    return out_items[0]->id;
+}
+

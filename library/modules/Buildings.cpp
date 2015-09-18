@@ -1072,7 +1072,7 @@ bool Buildings::deconstruct(df::building *bld)
     // Assume: no parties.
     unlinkRooms(bld);
     // Assume: not unit destroy target
-    vector_erase_at(ui->tax_collection.rooms, linear_index(ui->tax_collection.rooms, bld));
+    vector_erase_at(ui->tax_collection.rooms, linear_index(ui->tax_collection.rooms, bld->id));
     // Assume: not used in punishment
     // Assume: not used in non-own jobs
     // Assume: does not affect pathfinding
@@ -1162,4 +1162,59 @@ void Buildings::updateBuildings(color_ostream& out, void* ptr)
         corner1.erase(id);
         corner2.erase(id);
     }
+}
+
+void Buildings::getStockpileContents(df::building_stockpilest *stockpile, std::vector<df::item*> *items)
+{
+    CHECK_NULL_POINTER(stockpile);
+
+    items->clear();
+
+    Buildings::StockpileIterator stored;
+    for (stored.begin(stockpile); !stored.done(); ++stored) {
+        df::item *item = *stored;
+        items->push_back(item);
+    }
+}
+
+bool Buildings::isActivityZone(df::building * building)
+{
+    CHECK_NULL_POINTER(building);
+    return building->getType() == building_type::Civzone
+            && building->getSubtype() == (short)civzone_type::ActivityZone;
+}
+
+bool Buildings::isPenPasture(df::building * building)
+{
+    if (!isActivityZone(building))
+        return false;
+
+    return ((df::building_civzonest*) building)->zone_flags.bits.pen_pasture != 0;
+}
+
+bool Buildings::isPitPond(df::building * building)
+{
+    if (!isActivityZone(building))
+        return false;
+    return ((df::building_civzonest*) building)->zone_flags.bits.pit_pond != 0;
+}
+
+bool Buildings::isActive(df::building * building)
+{
+    if (!isActivityZone(building))
+        return false;
+    return ((df::building_civzonest*) building)->zone_flags.bits.active != 0;
+}
+
+// returns building of pen/pit at cursor position (NULL if nothing found)
+df::building* Buildings::findPenPitAt(df::coord coord)
+{
+    vector<df::building_civzonest*> zones;
+    Buildings::findCivzonesAt(&zones, coord);
+    for (auto zone = zones.begin(); zone != zones.end(); ++zone)
+    {
+        if (isPenPasture(*zone) || isPitPond(*zone))
+            return (*zone);
+    }
+    return NULL;
 }

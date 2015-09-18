@@ -4,15 +4,16 @@
 #include "Console.h"
 #include "Export.h"
 #include "PluginManager.h"
-
 #include "DataDefs.h"
 #include "TileTypes.h"
+
 #include "df/world.h"
 #include "df/map_block.h"
 #include "df/tile_dig_designation.h"
 #include "df/plant_raw.h"
 #include "df/plant.h"
 
+#include "modules/Maps.h"
 #include <set>
 
 using std::string;
@@ -21,7 +22,8 @@ using std::set;
 using namespace DFHack;
 using namespace df::enums;
 
-using df::global::world;
+DFHACK_PLUGIN("getplants");
+REQUIRE_GLOBAL(world);
 
 command_result df_getplants (color_ostream &out, vector <string> & parameters)
 {
@@ -100,45 +102,44 @@ command_result df_getplants (color_ostream &out, vector <string> & parameters)
     }
 
     count = 0;
-    for (size_t i = 0; i < world->map.map_blocks.size(); i++)
+    for (size_t i = 0; i < world->plants.all.size(); i++)
     {
-        df::map_block *cur = world->map.map_blocks[i];
+        const df::plant *plant = world->plants.all[i];
+        df::map_block *cur = Maps::getTileBlock(plant->pos);
         bool dirty = false;
-        for (size_t j = 0; j < cur->plants.size(); j++)
+
+        int x = plant->pos.x % 16;
+        int y = plant->pos.y % 16;
+        if (plantIDs.find(plant->material) != plantIDs.end())
         {
-            const df::plant *plant = cur->plants[j];
-            int x = plant->pos.x % 16;
-            int y = plant->pos.y % 16;
-            if (plantIDs.find(plant->material) != plantIDs.end())
-            {
-                if (exclude)
-                    continue;
-            }
-            else
-            {
-                if (!exclude)
-                    continue;
-            }
-            df::tiletype_shape shape = tileShape(cur->tiletype[x][y]);
-            df::tiletype_special special = tileSpecial(cur->tiletype[x][y]);
-            if (plant->flags.bits.is_shrub && (treesonly || !(shape == tiletype_shape::SHRUB && special != tiletype_special::DEAD)))
+            if (exclude)
                 continue;
-            if (!plant->flags.bits.is_shrub && (shrubsonly || !(shape == tiletype_shape::TREE)))
+        }
+        else
+        {
+            if (!exclude)
                 continue;
-            if (cur->designation[x][y].bits.hidden)
-                continue;
-            if (deselect && cur->designation[x][y].bits.dig == tile_dig_designation::Default)
-            {
-                cur->designation[x][y].bits.dig = tile_dig_designation::No;
-                dirty = true;
-                ++count;
-            }
-            if (!deselect && cur->designation[x][y].bits.dig == tile_dig_designation::No)
-            {
-                cur->designation[x][y].bits.dig = tile_dig_designation::Default;
-                dirty = true;
-                ++count;
-            }
+        }
+        df::tiletype_shape shape = tileShape(cur->tiletype[x][y]);
+        df::tiletype_material material = tileMaterial(cur->tiletype[x][y]);
+        df::tiletype_special special = tileSpecial(cur->tiletype[x][y]);
+        if (plant->flags.bits.is_shrub && (treesonly || !(shape == tiletype_shape::SHRUB && special != tiletype_special::DEAD)))
+            continue;
+        if (!plant->flags.bits.is_shrub && (shrubsonly || !(material == tiletype_material::TREE)))
+            continue;
+        if (cur->designation[x][y].bits.hidden)
+            continue;
+        if (deselect && cur->designation[x][y].bits.dig == tile_dig_designation::Default)
+        {
+            cur->designation[x][y].bits.dig = tile_dig_designation::No;
+            dirty = true;
+            ++count;
+        }
+        if (!deselect && cur->designation[x][y].bits.dig == tile_dig_designation::No)
+        {
+            cur->designation[x][y].bits.dig = tile_dig_designation::Default;
+            dirty = true;
+            ++count;
         }
         if (dirty)
             cur->flags.bits.designated = true;
@@ -147,8 +148,6 @@ command_result df_getplants (color_ostream &out, vector <string> & parameters)
         out.print("Updated %d plant designations.\n", count);
     return CR_OK;
 }
-
-DFHACK_PLUGIN("getplants");
 
 DFhackCExport command_result plugin_init ( color_ostream &out, vector <PluginCommand> &commands)
 {

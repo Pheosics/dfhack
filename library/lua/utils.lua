@@ -148,6 +148,21 @@ function make_sort_order(data,ordering)
 end
 
 --[[
+    Iterate a 'list' structure, e.g. df.global.world.job_list
+--]]
+local function next_df_list(s,link)
+    link = link.next
+    if link then
+        return link, link.item
+    end
+end
+
+function listpairs(list)
+    return next_df_list, nil, list
+end
+
+
+--[[
     Recursively assign data into a table.
 --]]
 function assign(tgt,src)
@@ -457,6 +472,14 @@ function getBuildingCenter(building)
     return xyz2pos(building.centerx, building.centery, building.z)
 end
 
+function getItemDescription(item,mode)
+    return call_with_string(item, 'getItemDescription', mode or 0)
+end
+
+function getItemDescriptionPrefix(item,mode)
+    return call_with_string(item, 'getItemDescriptionPrefix', mode or 0)
+end
+
 -- Split the string by the given delimiter
 function split_string(self, delimiter)
     local result = { }
@@ -515,6 +538,88 @@ end
 function check_number(text)
     local nv = tonumber(text)
     return nv ~= nil, nv
+end
+
+function invert(tab)
+    local result = {}
+    for k,v in pairs(tab) do
+        result[v]=k
+    end
+    return result
+end
+
+function processArgs(args, validArgs)
+    --[[
+    standardized argument processing for scripts
+    -argName value
+    -argName [list of values]
+    -argName [list of [nested values] -that can be [whatever] format of matched square brackets]
+    -arg1 \-arg3
+        escape sequences
+    --]]
+    local result = {}
+    local argName
+    local bracketDepth = 0
+    for i,arg in ipairs(args) do
+        if argName then
+            if arg == '[' then
+                if bracketDepth > 0 then
+                    table.insert(result[argName], arg)
+                end
+                bracketDepth = bracketDepth+1
+            elseif arg == ']' then
+                bracketDepth = bracketDepth-1
+                if bracketDepth > 0 then
+                    table.insert(result[argName], arg)
+                else
+                    argName = nil
+                end
+            elseif string.sub(arg,1,1) == '\\' then
+                if bracketDepth == 0 then
+                    result[argName] = string.sub(arg,2)
+                    argName = nil
+                else
+                    table.insert(result[argName], string.sub(arg,2))
+                end
+            else
+                if bracketDepth == 0 then
+                    result[argName] = arg
+                    argName = nil
+                else
+                    table.insert(result[argName], arg)
+                end
+            end
+        elseif string.sub(arg,1,1) == '-' then
+            argName = string.sub(arg,2)
+            if validArgs and not validArgs[argName] then
+                error('error: invalid arg: ' .. i .. ': ' .. argName)
+            end
+            if result[argName] then
+                error('duplicate arg: ' .. i .. ': ' .. argName)
+            end
+            if i+1 > #args or string.sub(args[i+1],1,1) == '-' then
+                result[argName] = ''
+                argName = nil
+            else
+                result[argName] = {}
+            end
+        else
+            error('error parsing arg ' .. i .. ': ' .. arg)
+        end
+    end
+    return result
+end
+
+function fillTable(table1,table2)
+ for k,v in pairs(table2) do
+  table1[k] = v
+ end
+end
+
+function unfillTable(table1,table2)
+ for k,v in pairs(table2) do
+  table1[k] = nil
+ end
 end
 
 return _ENV

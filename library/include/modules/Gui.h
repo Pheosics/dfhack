@@ -35,6 +35,8 @@ distribution.
 #include "df/init.h"
 #include "df/ui.h"
 #include "df/announcement_type.h"
+#include "df/announcement_flags.h"
+#include "df/unit_report_type.h"
 
 namespace df {
     struct viewscreen;
@@ -84,6 +86,7 @@ namespace DFHack
         // A unit is selected via 'v', 'k', unitjobs, or
         // a full-screen item view of a cage or suchlike
         DFHACK_EXPORT bool any_unit_hotkey(df::viewscreen *top);
+        DFHACK_EXPORT df::unit *getAnyUnit(df::viewscreen *top);
         DFHACK_EXPORT df::unit *getSelectedUnit(color_ostream &out, bool quiet = false);
 
         // An item is selected via 'v'->inventory, 'k', 't', or
@@ -91,11 +94,20 @@ namespace DFHack
         // last case, the highlighted contained item is returned, not
         // the container itself.
         DFHACK_EXPORT bool any_item_hotkey(df::viewscreen *top);
+        DFHACK_EXPORT df::item *getAnyItem(df::viewscreen *top);
         DFHACK_EXPORT df::item *getSelectedItem(color_ostream &out, bool quiet = false);
 
         // A building is selected via 'q', 't' or 'i' (civzone)
         DFHACK_EXPORT bool any_building_hotkey(df::viewscreen *top);
+        DFHACK_EXPORT df::building *getAnyBuilding(df::viewscreen *top);
         DFHACK_EXPORT df::building *getSelectedBuilding(color_ostream &out, bool quiet = false);
+
+        // Low-level API that gives full control over announcements and reports
+        DFHACK_EXPORT void writeToGamelog(std::string message);
+
+        DFHACK_EXPORT int makeAnnouncement(df::announcement_type type, df::announcement_flags mode, df::coord pos, std::string message, int color = 7, bool bright = true);
+        DFHACK_EXPORT bool addCombatReport(df::unit *unit, df::unit_report_type slot, int report_index);
+        DFHACK_EXPORT bool addCombatReportAuto(df::unit *unit, df::announcement_flags mode, int report_index);
 
         // Show a plain announcement, or a titan-style popup message
         DFHACK_EXPORT void showAnnouncement(std::string message, int color = 7, bool bright = true);
@@ -103,7 +115,7 @@ namespace DFHack
         DFHACK_EXPORT void showPopupAnnouncement(std::string message, int color = 7, bool bright = true);
 
         // Show an announcement with effects determined by announcements.txt
-        DFHACK_EXPORT void showAutoAnnouncement(df::announcement_type type, df::coord pos, std::string message, int color = 7, bool bright = true);
+        DFHACK_EXPORT void showAutoAnnouncement(df::announcement_type type, df::coord pos, std::string message, int color = 7, bool bright = true, df::unit *unit1 = NULL, df::unit *unit2 = NULL);
 
         /*
          * Cursor and window coords

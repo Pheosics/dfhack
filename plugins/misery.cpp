@@ -11,11 +11,15 @@
 #include <string>
 #include <vector>
 #include <map>
-using namespace std;
 
+using namespace std;
 using namespace DFHack;
 
+DFHACK_PLUGIN("misery");
 DFHACK_PLUGIN_IS_ENABLED(is_enabled);
+
+REQUIRE_GLOBAL(world);
+REQUIRE_GLOBAL(ui);
 
 static int factor = 1;
 static map<int, int> processedThoughtCountTable;
@@ -24,8 +28,6 @@ static map<int, int> processedThoughtCountTable;
 static vector<std::pair<int,int> > fakeThoughts;
 static int count;
 const int maxCount = 1000;
-
-DFHACK_PLUGIN("misery");
 
 command_result misery(color_ostream& out, vector<string>& parameters);
 
@@ -36,7 +38,7 @@ DFhackCExport command_result plugin_shutdown(color_ostream& out) {
 
 DFhackCExport command_result plugin_onupdate(color_ostream& out) {
     static bool wasLoaded = false;
-    if ( factor == 1 || !df::global::world || !df::global::world->map.block_index ) {
+    if ( factor == 1 || !world || !world->map.block_index ) {
         if ( wasLoaded ) {
             //we just unloaded the game: clear all data
             factor = 1;
@@ -47,7 +49,7 @@ DFhackCExport command_result plugin_onupdate(color_ostream& out) {
         }
         return CR_OK;
     }
-    
+
     if ( !wasLoaded ) {
         wasLoaded = true;
     }
@@ -57,17 +59,17 @@ DFhackCExport command_result plugin_onupdate(color_ostream& out) {
         return CR_OK;
     }
     count = 0;
-    
-    int32_t race_id = df::global::ui->race_id;
-    int32_t civ_id = df::global::ui->civ_id;
-    for ( size_t a = 0; a < df::global::world->units.all.size(); a++ ) {
-        df::unit* unit = df::global::world->units.all[a]; //TODO: consider units.active
+
+    int32_t race_id = ui->race_id;
+    int32_t civ_id = ui->civ_id;
+    for ( size_t a = 0; a < world->units.all.size(); a++ ) {
+        df::unit* unit = world->units.all[a]; //TODO: consider units.active
         //living, native units only
         if ( unit->race != race_id || unit->civ_id != civ_id )
             continue;
         if ( unit->flags1.bits.dead )
             continue;
-        
+
         int processedThoughtCount;
         map<int,int>::iterator i = processedThoughtCountTable.find(unit->id);
         if ( i == processedThoughtCountTable.end() ) {
@@ -76,13 +78,13 @@ DFhackCExport command_result plugin_onupdate(color_ostream& out) {
         } else {
             processedThoughtCount = (*i).second;
         }
-        
+
         if ( processedThoughtCount == unit->status.recent_events.size() ) {
             continue;
         } else if ( processedThoughtCount > unit->status.recent_events.size() ) {
             processedThoughtCount = unit->status.recent_events.size();
         }
-        
+
         //don't reprocess any old thoughts
         vector<df::unit_thought*> newThoughts;
         for ( size_t b = processedThoughtCount; b < unit->status.recent_events.size(); b++ ) {
@@ -118,7 +120,7 @@ DFhackCExport command_result plugin_onupdate(color_ostream& out) {
         }
         processedThoughtCountTable[unit->id] = unit->status.recent_events.size();
     }
-    
+
     return CR_OK;
 }
 
@@ -153,15 +155,15 @@ DFhackCExport command_result plugin_enable(color_ostream &out, bool enable)
 }
 
 command_result misery(color_ostream &out, vector<string>& parameters) {
-    if ( !df::global::world || !df::global::world->map.block_index ) {
+    if ( !world || !world->map.block_index ) {
         out.printerr("misery can only be enabled in fortress mode with a fully-loaded game.\n");
         return CR_FAILURE;
     }
-    
+
     if ( parameters.size() < 1 || parameters.size() > 2 ) {
         return CR_WRONG_USAGE;
     }
-    
+
     if ( parameters[0] == "disable" ) {
         if ( parameters.size() > 1 ) {
             return CR_WRONG_USAGE;
@@ -184,7 +186,7 @@ command_result misery(color_ostream &out, vector<string>& parameters) {
         for ( size_t a = 0; a < fakeThoughts.size(); a++ ) {
             int dorfIndex = fakeThoughts[a].first;
             int thoughtIndex = fakeThoughts[a].second;
-            df::global::world->units.all[dorfIndex]->status.recent_events[thoughtIndex]->age = 1000000;
+            world->units.all[dorfIndex]->status.recent_events[thoughtIndex]->age = 1000000;
         }
         fakeThoughts.clear();
     } else {
@@ -195,7 +197,7 @@ command_result misery(color_ostream &out, vector<string>& parameters) {
         factor = a;
         is_enabled = factor > 1;
     }
-    
+
     return CR_OK;
 }
 

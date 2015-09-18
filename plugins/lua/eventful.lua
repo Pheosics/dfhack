@@ -1,7 +1,7 @@
 local _ENV = mkmodule('plugins.eventful')
 --[[
-    
-    
+
+
 --]]
 local function getShopName(btype,bsubtype,bcustom)
     local typenames_shop={[df.workshop_type.Carpenters]="CARPENTERS",[df.workshop_type.Farmers]="FARMERS",
@@ -22,16 +22,16 @@ local function getShopName(btype,bsubtype,bcustom)
         [df.furnace_type.MagmaGlassFurnace]="MAGMA_GLASS_FURNACE",[df.furnace_type.MagmaKiln]="MAGMA_KILN",
         [df.furnace_type.Kiln]="KILN"}
     if btype==df.building_type.Workshop then
-        if typenames_shop[bsubtype]~=nil then 
+        if typenames_shop[bsubtype]~=nil then
             return typenames_shop[bsubtype]
         else
-            return nil --todo add custom (not very useful)
+            return df.building_def_workshopst.find(bcustom).code
         end
     elseif btype==df.building_type.Furnace then
-        if typenames_furnace[bsubtype]~=nil then 
+        if typenames_furnace[bsubtype]~=nil then
             return typenames_furnace[bsubtype]
         else
-            return nil --todo add custom (not very useful)
+            return df.building_def_furnacest.find(bcustom).code
         end
     end
 end
@@ -44,9 +44,9 @@ local function unregall(state)
         _registeredStuff={}
     end
 end
-local function onReact(reaction,unit,input_items,input_reagents,output_items,call_native)
+local function onReact(reaction,reaction_product,unit,input_items,input_reagents,output_items,call_native)
     if _registeredStuff.reactionCallbacks and _registeredStuff.reactionCallbacks[reaction.code] then
-        _registeredStuff.reactionCallbacks[reaction.code](reaction,unit,input_items,input_reagents,output_items,call_native)
+        _registeredStuff.reactionCallbacks[reaction.code](reaction,reaction_product,unit,input_items,input_reagents,output_items,call_native)
     end
 end
 local function onPostSidebar(workshop)
@@ -77,14 +77,46 @@ local function onPostSidebar(workshop)
                 wjob.choices_visible:insert("#",new_button)
             end
         end
+        if _registeredStuff.customSidebar and _registeredStuff.customSidebar[shop_id] then
+            _registeredStuff.customSidebar[shop_id](workshop)
+        end
     end
 end
-
+local function customSidebarsCallback(workshop)
+    local shop_id=getShopName(workshop:getType(),workshop:getSubtype(),workshop:getCustomType())
+    if shop_id then
+        if _registeredStuff.customSidebar and _registeredStuff.customSidebar[shop_id] then
+            _registeredStuff.customSidebar[shop_id](workshop)
+        end
+    end
+end
 function registerReaction(reaction_name,callback)
     _registeredStuff.reactionCallbacks=_registeredStuff.reactionCallbacks or {}
     _registeredStuff.reactionCallbacks[reaction_name]=callback
     onReactionComplete._library=onReact
     dfhack.onStateChange.eventful=unregall
+end
+
+function registerSidebar(shop_name,callback)
+    if type(callback)=="function" then
+        _registeredStuff.customSidebar=_registeredStuff.customSidebar or {}
+        _registeredStuff.customSidebar[shop_name]=callback
+        onWorkshopFillSidebarMenu._library=customSidebarsCallback
+        dfhack.onStateChange.eventful=unregall
+    else
+        local function drawSidebar( wshop )
+            local valid_focus="dwarfmode/QueryBuilding/Some"
+            if wshop:getMaxBuildStage()==wshop:getBuildStage() then
+                local sidebar=callback{workshop=wshop}
+                if string.sub(dfhack.gui.getCurFocus(),1,#valid_focus)==valid_focus then
+                    sidebar:show()
+                else
+                    sidebar:show(dfhack.gui.getCurViewscreen(true).parent)
+                end
+            end
+        end
+        registerSidebar(shop_name,drawSidebar)
+    end
 end
 
 function removeNative(shop_name,name)
@@ -109,12 +141,27 @@ function addReactionToShop(reaction_name,shop_name)
     dfhack.onStateChange.eventful=unregall
 end
 local function invertTable(tbl)
-	local ret={}
-	for k,v in pairs(tbl) do
-		ret[v]=k
-	end
-	return ret
+    local ret={}
+    for k,v in pairs(tbl) do
+        ret[v]=k
+    end
+    return ret
 end
-eventType=invertTable{[0]="TICK","JOB_INITIATED","JOB_COMPLETED","UNIT_DEATH","ITEM_CREATED",
-	"BUILDING","CONSTRUCTION","SYNDROME","INVASION","INVENTORY_CHANGE","EVENT_MAX"}
+eventType=invertTable{
+    [0]="TICK",
+    "JOB_INITIATED",
+    "JOB_COMPLETED",
+    "UNIT_DEATH",
+    "ITEM_CREATED",
+    "BUILDING",
+    "CONSTRUCTION",
+    "SYNDROME",
+    "INVASION",
+    "INVENTORY_CHANGE",
+    "REPORT",
+    "UNIT_ATTACK",
+    "UNLOAD",
+    "INTERACTION",
+    "EVENT_MAX"
+}
 return _ENV

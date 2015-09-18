@@ -45,12 +45,14 @@ using namespace std;
 #include "PluginManager.h"
 #include "ModuleFactory.h"
 #include "modules/EventManager.h"
+#include "modules/Filesystem.h"
 #include "modules/Gui.h"
 #include "modules/World.h"
 #include "modules/Graphic.h"
 #include "modules/Windows.h"
 #include "RemoteServer.h"
 #include "LuaTools.h"
+#include "DFHackVersion.h"
 
 #include "MiscUtils.h"
 
@@ -61,6 +63,9 @@ using namespace DFHack;
 #include "df/world_data.h"
 #include "df/interfacest.h"
 #include "df/viewscreen_dwarfmodest.h"
+#include "df/viewscreen_game_cleanerst.h"
+#include "df/viewscreen_loadgamest.h"
+#include "df/viewscreen_savegamest.h"
 #include <df/graphic.h>
 
 #include <stdio.h>
@@ -249,7 +254,7 @@ static std::string getScriptHelp(std::string path, std::string helpprefix)
 static void listScripts(PluginManager *plug_mgr, std::map<string,string> &pset, std::string path, bool all, std::string prefix = "")
 {
     std::vector<string> files;
-    getdir(path, files);
+    Filesystem::listdir(path, files);
 
     for (size_t i = 0; i < files.size(); i++)
     {
@@ -393,10 +398,78 @@ static bool try_autocomplete(color_ostream &con, const std::string &first, std::
     return false;
 }
 
-command_result Core::runCommand(color_ostream &con, const std::string &first, vector<string> &parts)
+string findScript(string path, string name) {
+    if (df::global::world) {
+        //first try the save folder if it exists
+        string save = World::ReadWorldFolder();
+        if ( save != "" ) {
+            string file = path + "/data/save/" + save + "/raw/scripts/" + name;
+            if (fileExists(file)) {
+                return file;
+            }
+        }
+    }
+    string file = path + "/raw/scripts/" + name;
+    if (fileExists(file)) {
+        return file;
+    }
+    file = path + "/hack/scripts/" + name;
+    if (fileExists(file)) {
+        return file;
+    }
+    return "";
+}
+
+static std::map<std::string, state_change_event> state_change_event_map;
+static void sc_event_map_init() {
+    if (!state_change_event_map.size())
+    {
+        #define insert(name) state_change_event_map.insert(std::pair<std::string, state_change_event>(#name, name))
+        insert(SC_WORLD_LOADED);
+        insert(SC_WORLD_UNLOADED);
+        insert(SC_MAP_LOADED);
+        insert(SC_MAP_UNLOADED);
+        insert(SC_VIEWSCREEN_CHANGED);
+        insert(SC_PAUSED);
+        insert(SC_UNPAUSED);
+        #undef insert
+    }
+}
+
+static state_change_event sc_event_id (std::string name) {
+    sc_event_map_init();
+    auto it = state_change_event_map.find(name);
+    if (it != state_change_event_map.end())
+        return it->second;
+    if (name.find("SC_") != 0)
+        return sc_event_id(std::string("SC_") + name);
+    return SC_UNKNOWN;
+}
+
+static std::string sc_event_name (state_change_event id) {
+    sc_event_map_init();
+    for (auto it = state_change_event_map.begin(); it != state_change_event_map.end(); ++it)
+    {
+        if (it->second == id)
+            return it->first;
+    }
+    return "SC_UNKNOWN";
+}
+
+command_result Core::runCommand(color_ostream &con, const std::string &first_, vector<string> &parts)
 {
+    std::string first = first_;
     if (!first.empty())
     {
+        if(first.find('\\') != std::string::npos)
+        {
+            con.printerr("Replacing backslashes with forward slashes in \"%s\"\n", first.c_str());
+            for (size_t i = 0; i < first.size(); i++)
+            {
+                if (first[i] == '\\')
+                    first[i] = '/';
+            }
+        }
         // let's see what we actually got
         if(first=="help" || first == "?" || first == "man")
         {
@@ -425,7 +498,7 @@ command_result Core::runCommand(color_ostream &con, const std::string &first, ve
                           "  reload PLUGIN|all     - Reload a plugin or all loaded plugins.\n"
                          );
 
-                con.print("\nDFHack version " DFHACK_VERSION ".\n");
+                con.print("\nDFHack version %s.\n", get_dfhack_version());
             }
             else if (parts.size() == 1)
             {
@@ -446,18 +519,20 @@ command_result Core::runCommand(color_ostream &con, const std::string &first, ve
                         return CR_OK;
                     }
                 }
-                auto filename = getHackPath() + "scripts/" + parts[0];
-                if (fileExists(filename + ".lua"))
-                {
-                    string help = getScriptHelp(filename + ".lua", "-- ");
+                string path = this->p->getPath();
+                string file = findScript(path, parts[0] + ".lua");
+                if ( file != "" ) {
+                    string help = getScriptHelp(file, "-- ");
                     con.print("%s: %s\n", parts[0].c_str(), help.c_str());
                     return CR_OK;
                 }
-                if (plug_mgr->ruby && plug_mgr->ruby->is_enabled() && fileExists(filename + ".rb"))
-                {
-                    string help = getScriptHelp(filename + ".rb", "# ");
-                    con.print("%s: %s\n", parts[0].c_str(), help.c_str());
-                    return CR_OK;
+                if (plug_mgr->ruby && plug_mgr->ruby->is_enabled() ) {
+                    file = findScript(path, parts[0] + ".rb");
+                    if ( file != "" ) {
+                        string help = getScriptHelp(file, "# ");
+                        con.print("%s: %s\n", parts[0].c_str(), help.c_str());
+                        return CR_OK;
+                    }
                 }
                 con.printerr("Unknown command: %s\n", parts[0].c_str());
             }
@@ -633,6 +708,7 @@ command_result Core::runCommand(color_ostream &con, const std::string &first, ve
                 "  die                   - Force DF to close immediately\n"
                 "  keybinding            - Modify bindings of commands to keys\n"
                 "  script FILENAME       - Run the commands specified in a file.\n"
+                "  sc-script             - Automatically run specified scripts on state change events\n"
                 "  plug [PLUGIN|v]       - List plugin state and detailed description.\n"
                 "  load PLUGIN|all       - Load a plugin by name or load all possible plugins.\n"
                 "  unload PLUGIN|all     - Unload a plugin or all loaded plugins.\n"
@@ -687,7 +763,7 @@ command_result Core::runCommand(color_ostream &con, const std::string &first, ve
                 std::string keystr = parts[1];
                 if (parts[0] == "set")
                     ClearKeyBindings(keystr);
-                for (int i = parts.size()-1; i >= 2; i--) 
+                for (int i = parts.size()-1; i >= 2; i--)
                 {
                     if (!AddKeyBinding(keystr, parts[i])) {
                         con.printerr("Invalid key spec: %s\n", keystr.c_str());
@@ -760,20 +836,140 @@ command_result Core::runCommand(color_ostream &con, const std::string &first, ve
                 return CR_WRONG_USAGE;
             }
         }
+        else if(first=="hide")
+        {
+            if (!getConsole().hide())
+            {
+                con.printerr("Could not hide console\n");
+                return CR_FAILURE;
+            }
+            return CR_OK;
+        }
+        else if(first=="show")
+        {
+            if (!getConsole().show())
+            {
+                con.printerr("Could not show console\n");
+                return CR_FAILURE;
+            }
+            return CR_OK;
+        }
+        else if(first == "sc-script")
+        {
+            if (parts.size() < 1)
+            {
+                con << "Usage: sc-script add|remove|list|help SC_EVENT [path-to-script] [...]" << endl;
+                return CR_WRONG_USAGE;
+            }
+            if (parts[0] == "help" || parts[0] == "?")
+            {
+                con << "Valid event names (SC_ prefix is optional):" << endl;
+                for (int i = SC_WORLD_LOADED; i <= SC_UNPAUSED; i++)
+                {
+                    std::string name = sc_event_name((state_change_event)i);
+                    if (name != "SC_UNKNOWN")
+                        con << "  " << name << endl;
+                }
+                return CR_OK;
+            }
+            else if (parts[0] == "list")
+            {
+                if(parts.size() < 2)
+                    parts.push_back("");
+                if (parts[1].size() && sc_event_id(parts[1]) == SC_UNKNOWN)
+                {
+                    con << "Unrecognized event name: " << parts[1] << endl;
+                    return CR_WRONG_USAGE;
+                }
+                for (auto it = state_change_scripts.begin(); it != state_change_scripts.end(); ++it)
+                {
+                    if (!parts[1].size() || (it->event == sc_event_id(parts[1])))
+                    {
+                        con.print("%s (%s): %s%s\n", sc_event_name(it->event).c_str(),
+                            it->save_specific ? "save-specific" : "global",
+                            it->save_specific ? "<save folder>/raw/" : "<DF folder>/",
+                            it->path.c_str());
+                    }
+                }
+                return CR_OK;
+            }
+            else if (parts[0] == "add")
+            {
+                if (parts.size() < 3 || (parts.size() >= 4 && parts[3] != "-save"))
+                {
+                    con << "Usage: sc-script add EVENT path-to-script [-save]" << endl;
+                    return CR_WRONG_USAGE;
+                }
+                state_change_event evt = sc_event_id(parts[1]);
+                if (evt == SC_UNKNOWN)
+                {
+                    con << "Unrecognized event: " << parts[1] << endl;
+                    return CR_FAILURE;
+                }
+                bool save_specific = (parts.size() >= 4 && parts[3] == "-save");
+                StateChangeScript script(evt, parts[2], save_specific);
+                for (auto it = state_change_scripts.begin(); it != state_change_scripts.end(); ++it)
+                {
+                    if (script == *it)
+                    {
+                        con << "Script already registered" << endl;
+                        return CR_FAILURE;
+                    }
+                }
+                state_change_scripts.push_back(script);
+                return CR_OK;
+            }
+            else if (parts[0] == "remove")
+            {
+                if (parts.size() < 3 || (parts.size() >= 4 && parts[3] != "-save"))
+                {
+                    con << "Usage: sc-script remove EVENT path-to-script [-save]" << endl;
+                    return CR_WRONG_USAGE;
+                }
+                state_change_event evt = sc_event_id(parts[1]);
+                if (evt == SC_UNKNOWN)
+                {
+                    con << "Unrecognized event: " << parts[1] << endl;
+                    return CR_FAILURE;
+                }
+                bool save_specific = (parts.size() >= 4 && parts[3] == "-save");
+                StateChangeScript tmp(evt, parts[2], save_specific);
+                auto it = std::find(state_change_scripts.begin(), state_change_scripts.end(), tmp);
+                if (it != state_change_scripts.end())
+                {
+                    state_change_scripts.erase(it);
+                    return CR_OK;
+                }
+                else
+                {
+                    con << "Unrecognized script" << endl;
+                    return CR_FAILURE;
+                }
+            }
+            else
+            {
+                con << "Usage: sc-script add|remove|list|help SC_EVENT [path-to-script] [...]" << endl;
+                return CR_WRONG_USAGE;
+            }
+        }
         else
         {
             command_result res = plug_mgr->InvokeCommand(con, first, parts);
             if(res == CR_NOT_IMPLEMENTED)
             {
-                auto filename = getHackPath() + "scripts/" + first;
-                std::string completed;
-
-                if (fileExists(filename + ".lua"))
+                string completed;
+                string path = this->p->getPath();
+                string filename = findScript(path, first + ".lua");
+                bool lua = filename != "";
+                if ( !lua ) {
+                    filename = findScript(path, first + ".rb");
+                }
+                if ( lua )
                     res = runLuaScript(con, first, parts);
-                else if (plug_mgr->ruby && plug_mgr->ruby->is_enabled() && fileExists(filename + ".rb"))
+                else if ( filename != "" && plug_mgr->ruby && plug_mgr->ruby->is_enabled() )
                     res = runRubyScript(con, plug_mgr, first, parts);
-                else if (try_autocomplete(con, first, completed))
-                    return CR_NOT_IMPLEMENTED;// runCommand(con, completed, parts);
+                else if ( try_autocomplete(con, first, completed) )
+                    return CR_NOT_IMPLEMENTED;
                 else
                     con.printerr("%s is not a recognized command.\n", first.c_str());
             }
@@ -793,22 +989,61 @@ bool Core::loadScriptFile(color_ostream &out, string fname, bool silent)
     if(!silent)
         out << "Loading script at " << fname << std::endl;
     ifstream script(fname.c_str());
-    if (script.good())
-    {
-        string command;
-        while (getline(script, command))
-        {
-            if (!command.empty())
-                runCommand(out, command);
-        }
-        return true;
-    }
-    else
+    if ( !script.good() )
     {
         if(!silent)
             out.printerr("Error loading script\n");
         return false;
     }
+    string command;
+    while(script.good()) {
+        string temp;
+        getline(script,temp);
+        bool doMore = false;
+        if ( temp.length() > 0 ) {
+            if ( temp[0] == '#' )
+                continue;
+            if ( temp[temp.length()-1] == '\r' )
+                temp = temp.substr(0,temp.length()-1);
+            if ( temp.length() > 0 ) {
+                if ( temp[temp.length()-1] == '\\' ) {
+                    temp = temp.substr(0,temp.length()-1);
+                    doMore = true;
+                }
+            }
+        }
+        command = command + temp;
+        if ( (!doMore || !script.good()) && !command.empty() ) {
+            runCommand(out, command);
+            command = "";
+        }
+    }
+    return true;
+}
+
+static void run_dfhack_init(color_ostream &out, Core *core)
+{
+    if (!df::global::world || !df::global::ui || !df::global::gview)
+    {
+        out.printerr("Key globals are missing, skipping loading dfhack.init.\n");
+        return;
+    }
+
+    if (!core->loadScriptFile(out, "dfhack.init", true))
+    {
+        core->runCommand(out, "gui/no-dfhack-init");
+        core->loadScriptFile(out, "dfhack.init-example", true);
+    }
+}
+
+// Load dfhack.init in a dedicated thread (non-interactive console mode)
+void fInitthread(void * iodata)
+{
+    IODATA * iod = ((IODATA*) iodata);
+    Core * core = iod->core;
+    color_ostream_proxy out(core->getConsole());
+
+    run_dfhack_init(out, core);
 }
 
 // A thread function... for the interactive console.
@@ -822,13 +1057,13 @@ void fIOthread(void * iodata)
     main_history.load("dfhack.history");
 
     Console & con = core->getConsole();
-    if(plug_mgr == 0 || core == 0)
+    if (plug_mgr == 0)
     {
         con.printerr("Something horrible happened in Core's constructor...\n");
         return;
     }
 
-    core->loadScriptFile(con, "dfhack.init", true);
+    run_dfhack_init(con, core);
 
     con.print("DFHack is ready. Have a nice day!\n"
               "Type in '?' or 'help' for general help, 'ls' to see all commands.\n");
@@ -854,7 +1089,7 @@ void fIOthread(void * iodata)
             main_history.add(command);
             main_history.save("dfhack.history");
         }
-        
+
         auto rv = core->runCommand(con, command);
 
         if (rv == CR_NOT_IMPLEMENTED)
@@ -910,6 +1145,8 @@ void Core::fatal (std::string output, bool deactivate)
 #ifndef LINUX_BUILD
     out << "Check file stderr.log for details\n";
     MessageBox(0,out.str().c_str(),"DFHack error!", MB_OK | MB_ICONERROR);
+#else
+    cout << "DFHack fatal error: " << out.str() << std::endl;
 #endif
 }
 
@@ -972,12 +1209,15 @@ bool Core::Init()
 
     cerr << "Initializing Console.\n";
     // init the console.
-    bool is_text_mode = false;
-    if(init && init->display.flag.is_set(init_display_flags::TEXT))
+    bool is_text_mode = (init && init->display.flag.is_set(init_display_flags::TEXT));
+    if (is_text_mode || getenv("DFHACK_DISABLE_CONSOLE"))
     {
-        is_text_mode = true;
         con.init(true);
         cerr << "Console is not available. Use dfhack-run to send commands.\n";
+        if (!is_text_mode)
+        {
+            cout << "Console disabled.\n";
+        }
     }
     else if(con.init(false))
         cerr << "Console is running.\n";
@@ -1008,20 +1248,29 @@ bool Core::Init()
     IODATA *temp = new IODATA;
     temp->core = this;
     temp->plug_mgr = plug_mgr;
+
+    HotkeyMutex = new mutex();
+    HotkeyCond = new condition_variable();
+
     if (!is_text_mode)
     {
         cerr << "Starting IO thread.\n";
         // create IO thread
         thread * IO = new thread(fIOthread, (void *) temp);
     }
+    else
+    {
+        cerr << "Starting dfhack.init thread.\n";
+        thread * init = new thread(fInitthread, (void *) temp);
+    }
+
     cerr << "Starting DF input capture thread.\n";
     // set up hotkey capture
-    HotkeyMutex = new mutex();
-    HotkeyCond = new condition_variable();
     thread * HK = new thread(fHKthread, (void *) temp);
     screen_window = new Windows::top_level_window();
     screen_window->addChild(new Windows::dfhack_dummy(5,10));
     started = true;
+    modstate = 0;
 
     cerr << "Starting the TCP listener.\n";
     server = new ServerMain();
@@ -1207,10 +1456,24 @@ void Core::doUpdate(color_ostream &out, bool first_update)
     if (first_update)
         onStateChange(out, SC_CORE_INITIALIZED);
 
+    // find the current viewscreen
+    df::viewscreen *screen = NULL;
+    if (df::global::gview)
+    {
+        screen = &df::global::gview->view;
+        while (screen->child)
+            screen = screen->child;
+    }
+
+    bool is_load_save =
+        strict_virtual_cast<df::viewscreen_game_cleanerst>(screen) ||
+        strict_virtual_cast<df::viewscreen_loadgamest>(screen) ||
+        strict_virtual_cast<df::viewscreen_savegamest>(screen);
+
     // detect if the game was loaded or unloaded in the meantime
     void *new_wdata = NULL;
     void *new_mapdata = NULL;
-    if (df::global::world)
+    if (df::global::world && !is_load_save)
     {
         df::world_data *wdata = df::global::world->world_data;
         // when the game is unloaded, world_data isn't deleted, but its contents are
@@ -1252,16 +1515,10 @@ void Core::doUpdate(color_ostream &out, bool first_update)
     }
 
     // detect if the viewscreen changed
-    if (df::global::gview) 
+    if (screen != top_viewscreen)
     {
-        df::viewscreen *screen = &df::global::gview->view;
-        while (screen->child)
-            screen = screen->child;
-        if (screen != top_viewscreen) 
-        {
-            top_viewscreen = screen;
-            onStateChange(out, SC_VIEWSCREEN_CHANGED);
-        }
+        top_viewscreen = screen;
+        onStateChange(out, SC_VIEWSCREEN_CHANGED);
     }
 
     if (df::global::pause_state)
@@ -1353,7 +1610,9 @@ void Core::onUpdate(color_ostream &out)
     Lua::Core::onUpdate(out);
 }
 
-static void handleLoadAndUnloadScripts(Core* core, color_ostream& out, state_change_event event) {
+void Core::handleLoadAndUnloadScripts(color_ostream& out, state_change_event event) {
+    if (!df::global::world)
+        return;
     //TODO: use different separators for windows
 #ifdef _WIN32
     static const std::string separator = "\\";
@@ -1363,13 +1622,41 @@ static void handleLoadAndUnloadScripts(Core* core, color_ostream& out, state_cha
     std::string rawFolder = "data" + separator + "save" + separator + (df::global::world->cur_savegame.save_dir) + separator + "raw" + separator;
     switch(event) {
     case SC_WORLD_LOADED:
-        core->loadScriptFile(out, rawFolder + "onLoad.init", true);
+        loadScriptFile(out, "onLoadWorld.init", true);
+        loadScriptFile(out, rawFolder + "onLoadWorld.init", true);
+        loadScriptFile(out, rawFolder + "onLoad.init", true);
         break;
     case SC_WORLD_UNLOADED:
-        core->loadScriptFile(out, rawFolder + "onUnload.init", true);
+        loadScriptFile(out, "onUnloadWorld.init", true);
+        loadScriptFile(out, rawFolder + "onUnloadWorld.init", true);
+        loadScriptFile(out, rawFolder + "onUnload.init", true);
+        break;
+    case SC_MAP_LOADED:
+        loadScriptFile(out, "onLoadMap.init", true);
+        loadScriptFile(out, rawFolder + "onLoadMap.init", true);
+        break;
+    case SC_MAP_UNLOADED:
+        loadScriptFile(out, "onUnloadMap.init", true);
+        loadScriptFile(out, rawFolder + "onUnloadMap.init", true);
         break;
     default:
         break;
+    }
+
+    for (auto it = state_change_scripts.begin(); it != state_change_scripts.end(); ++it)
+    {
+        if (it->event == event)
+        {
+            if (!it->save_specific)
+            {
+                if (!loadScriptFile(out, it->path, true))
+                    out.printerr("Could not load script: %s\n", it->path.c_str());
+            }
+            else if (it->save_specific && isWorldLoaded())
+            {
+                loadScriptFile(out, rawFolder + it->path, true);
+            }
+        }
     }
 }
 
@@ -1383,7 +1670,7 @@ void Core::onStateChange(color_ostream &out, state_change_event event)
 
     Lua::Core::onStateChange(out, event);
 
-    handleLoadAndUnloadScripts(this, out, event);
+    handleLoadAndUnloadScripts(out, event);
 }
 
 // FIXME: needs to terminate the IO threads and properly dismantle all the machinery involved.
@@ -1498,6 +1785,8 @@ int UnicodeAwareSym(const SDL::KeyboardEvent& ke)
 //MEMO: return false if event is consumed
 int Core::DFH_SDL_Event(SDL::Event* ev)
 {
+    //static bool alt = 0;
+
     // do NOT process events before we are ready.
     if(!started) return true;
     if(!ev)
@@ -1506,26 +1795,27 @@ int Core::DFH_SDL_Event(SDL::Event* ev)
     {
         auto ke = (SDL::KeyboardEvent *)ev;
 
-        if(ke->state == SDL::BTN_PRESSED && !hotkey_states[ke->ksym.sym])
+        if (ke->ksym.sym == SDL::K_LSHIFT || ke->ksym.sym == SDL::K_RSHIFT)
+            modstate = (ev->type == SDL::ET_KEYDOWN) ? modstate | DFH_MOD_SHIFT : modstate & ~DFH_MOD_SHIFT;
+        else if (ke->ksym.sym == SDL::K_LCTRL || ke->ksym.sym == SDL::K_RCTRL)
+            modstate = (ev->type == SDL::ET_KEYDOWN) ? modstate | DFH_MOD_CTRL : modstate & ~DFH_MOD_CTRL;
+        else if (ke->ksym.sym == SDL::K_LALT || ke->ksym.sym == SDL::K_RALT)
+            modstate = (ev->type == SDL::ET_KEYDOWN) ? modstate | DFH_MOD_ALT : modstate & ~DFH_MOD_ALT;
+        else if(ke->state == SDL::BTN_PRESSED && !hotkey_states[ke->ksym.sym])
         {
             hotkey_states[ke->ksym.sym] = true;
-
-            int mod = 0;
-            if (ke->ksym.mod & SDL::KMOD_SHIFT) mod |= 1;
-            if (ke->ksym.mod & SDL::KMOD_CTRL) mod |= 2;
-            if (ke->ksym.mod & SDL::KMOD_ALT) mod |= 4;
 
             // Use unicode so Windows gives the correct value for the
             // user's Input Language
             if((ke->ksym.unicode & 0xff80) == 0)
             {
                 int key = UnicodeAwareSym(*ke);
-                SelectHotkey(key, mod);
+                SelectHotkey(key, modstate);
             }
             else
             {
                 // Pretend non-ascii characters don't happen:
-                SelectHotkey(ke->ksym.sym, mod);
+                SelectHotkey(ke->ksym.sym, modstate);
             }
         }
         else if(ke->state == SDL::BTN_RELEASED)
@@ -1622,7 +1912,7 @@ static bool parseKeySpec(std::string keyspec, int *psym, int *pmod, std::string 
         } else if (keyspec.size() > 4 && keyspec.substr(0, 4) == "Alt-") {
             *pmod |= 4;
             keyspec = keyspec.substr(4);
-        } else 
+        } else
             break;
     }
 
